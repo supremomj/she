@@ -51,7 +51,13 @@
 
         <button id="sync-status-indicator" class="wall-btn btn-sync-status" type="button" title="Live Auto-Sync Status">
           <span class="sync-dot offline"></span>
-          <span>Connect Vercel KV</span>
+          <span>Connect Upstash</span>
+        </button>
+
+        <!-- Admin Moderation Button -->
+        <button id="admin-mode-toggle-btn" class="btn-admin-toggle" type="button" title="Admin Login">
+          <span>🔒</span>
+          <span>Admin</span>
         </button>
       </div>
 
@@ -161,7 +167,9 @@
       </div>
 
       <div class="wall-footer-meta">
-        Handcrafted with love for Sheryl • Freedom Wall Keepsake 2026
+        <span>Handcrafted with love for Sheryl • Freedom Wall Keepsake 2026</span>
+        <span>•</span>
+        <button class="admin-footer-link" onclick="document.getElementById('admin-mode-toggle-btn').click()">Admin Access</button>
       </div>
     </div>
 
@@ -293,29 +301,51 @@
   </div>
 
   <!-- =========================================================================
-       MODAL: VERCEL KV SETUP GUIDE
+       MODAL: VERCEL / UPSTASH SETUP GUIDE
        ========================================================================= -->
   <div id="kv-help-modal" class="freedom-modal" role="dialog" aria-modal="true">
     <div class="freedom-modal-card">
       <button id="close-kv-modal" class="modal-close-x" type="button" aria-label="Close">✕</button>
 
-      <h3 class="form-title">⚡ Connect Free Vercel KV</h3>
+      <h3 class="form-title">⚡ Connect Upstash Storage</h3>
       <p class="form-sub">
-        To allow notes to sync between your phone, laptop, and all teammates across the web, you just need to connect free Vercel KV inside your Vercel project:
+        To allow notes to sync between your phone, laptop, and all teammates across the web, connect Upstash inside your Vercel project:
       </p>
 
       <div style="background: #F4ECF8; padding: 1.4rem; border-radius: 10px; font-size: 0.92rem; line-height: 1.7; margin-bottom: 1.5rem; border: 1px solid var(--purple-border);">
         <strong>3 Quick Clicks in Vercel:</strong>
         <ol style="margin-left: 1.2rem; margin-top: 0.5rem;">
-          <li>Open your project <strong>she</strong> on <a href="https://vercel.com" target="_blank" style="color: var(--purple-primary); font-weight: 700;">vercel.com</a>.</li>
-          <li>Click the <strong>Storage</strong> tab at the top.</li>
-          <li>Click <strong>Create Database</strong> &rarr; select <strong>KV</strong> &rarr; click <strong>Connect to Project (she)</strong>.</li>
+          <li>In your Vercel project <strong>she</strong>, go to the <strong>Storage</strong> tab.</li>
+          <li>Click on <strong>Upstash</strong> *(Serverless DB: Redis)*.</li>
+          <li>Click <strong>Connect to Project (`she`)</strong>.</li>
         </ol>
       </div>
 
       <p style="font-size: 0.85rem; color: var(--text-body); line-height: 1.6; text-align: center;">
-        That's it! As soon as Vercel KV is connected, the indicator turns <strong>🟢 Live Synced</strong>, and every note posted from your phone will immediately show up on everyone's screen in real time!
+        That's it! As soon as it's connected, the indicator turns <strong>🟢 Live Synced</strong>, and every note posted will sync across all devices in real time!
       </p>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL: ADMIN LOGIN (UNLOCKS DELETE BUTTON ON NOTES)
+       ========================================================================= -->
+  <div id="admin-login-modal" class="freedom-modal" role="dialog" aria-modal="true">
+    <div class="freedom-modal-card" style="max-width: 440px;">
+      <button id="close-admin-modal" class="modal-close-x" type="button" aria-label="Close">✕</button>
+
+      <h3 class="form-title">🔒 Admin Mode</h3>
+      <p class="form-sub">Enter the admin password to unlock note removal and moderation tools.</p>
+
+      <form id="admin-login-form">
+        <div class="field-group">
+          <label for="admin-password-input" class="field-label">Admin Password</label>
+          <input type="password" id="admin-password-input" class="text-input" placeholder="Enter password (default: sheryl2026)" required>
+          <div id="admin-error-msg" style="color: #E53E3E; font-size: 0.82rem; margin-top: 0.4rem; display: none;"></div>
+        </div>
+
+        <button type="submit" class="btn-submit-note" style="margin-top: 0.5rem;">Unlock Delete Buttons</button>
+      </form>
     </div>
   </div>
 

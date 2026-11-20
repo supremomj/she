@@ -1,10 +1,10 @@
 /**
- * SHERYL'S FREEDOM WALL — VERCEL KV EDITION
+ * SHERYL'S FREEDOM WALL — VERCEL KV & ADMIN MODERATION EDITION
  * 
  * Features:
- * 1. 100% Vercel Native — Connects directly to Vercel KV via `/api/notes`
+ * 1. 100% Vercel Native — Connects directly to Upstash / Vercel KV via `/api/notes`
  * 2. Real-time background sync (every 2.5s) across all phones & computers
- * 3. Clear indicator showing whether Vercel KV is connected
+ * 3. Protected Admin Mode: enter admin password to unlock delete buttons (🗑️) on every note
  * 4. Zero placeholders — purely real user notes & Sheryl's authentic photo
  * 5. Interactive note creator (purple pastels, stickers, fasteners, photo upload)
  * 6. Live ❤️ reactions synced across all devices
@@ -19,6 +19,10 @@ let isVercelKVConnected = false;
 let pollingInterval = null;
 let lastKnownNotesHash = '';
 
+// Admin State
+let isAdmin = sessionStorage.getItem('sheryl_admin_auth') === 'true';
+let adminPassword = sessionStorage.getItem('sheryl_admin_pwd') || '';
+
 // Selected note creator state
 let selectedColor = 'lavender';
 let selectedSticker = '💜';
@@ -28,6 +32,7 @@ let attachedImageBase64 = null;
 // DOM Ready
 document.addEventListener('DOMContentLoaded', () => {
   initVercelStorage();
+  updateAdminUI();
   setupEventListeners();
   setupPhotoAttachment();
   setupFallingPetals();
@@ -53,10 +58,10 @@ async function initVercelStorage() {
       if (statusBtn) {
         if (isVercelKVConnected) {
           statusBtn.innerHTML = `<span class="sync-dot"></span> <span>Live Synced</span>`;
-          statusBtn.title = 'Vercel KV is connected! Real-time syncing is active across all devices.';
+          statusBtn.title = 'Upstash / Vercel KV connected! Real-time syncing is active.';
         } else {
-          statusBtn.innerHTML = `<span class="sync-dot offline"></span> <span>Connect Vercel KV</span>`;
-          statusBtn.title = 'Click here to connect free Vercel KV so your phone & computer can sync notes!';
+          statusBtn.innerHTML = `<span class="sync-dot offline"></span> <span>Connect Upstash</span>`;
+          statusBtn.title = 'Click here to connect Upstash Redis so your phone & computer can sync notes!';
         }
       }
 
@@ -188,6 +193,7 @@ function renderFreedomWall() {
     card.style.transform = `rotate(${rot}deg)`;
     card.id = `note-${note.id}`;
 
+    // Fastener HTML
     let fastenerHtml = '';
     if (note.fastener === 'pin') {
       fastenerHtml = `
@@ -201,6 +207,17 @@ function renderFreedomWall() {
       `;
     }
 
+    // Admin Delete Button (Only visible when Admin Mode is unlocked!)
+    let adminDeleteHtml = '';
+    if (isAdmin) {
+      adminDeleteHtml = `
+        <button class="note-admin-delete" onclick="adminDeleteNote('${note.id}', '${escapeJs(note.name)}')" title="Delete this note (Admin)">
+          🗑️
+        </button>
+      `;
+    }
+
+    // User Attached Photo
     let photoHtml = '';
     if (note.image) {
       photoHtml = `
@@ -213,6 +230,7 @@ function renderFreedomWall() {
     const liked = isReactionActive(note.id);
 
     card.innerHTML = `
+      ${adminDeleteHtml}
       ${fastenerHtml}
       <div class="note-sticker">${escapeHtml(note.sticker || '💜')}</div>
       ${photoHtml}
@@ -248,6 +266,11 @@ function escapeHtml(str) {
       default: return match;
     }
   });
+}
+
+function escapeJs(str) {
+  if (!str) return '';
+  return str.replace(/['"\\]/g, '\\$&');
 }
 
 // 4. Reactions
@@ -294,7 +317,58 @@ window.toggleNoteReaction = async function(noteId) {
   }
 };
 
-// 5. Photo Attachment & Compression Engine
+// 5. Admin Mode Controls & Delete Action
+window.adminDeleteNote = async function(noteId, authorName) {
+  if (!isAdmin) return;
+
+  const confirmed = confirm(`Are you sure you want to permanently remove this note from "${authorName}"?`);
+  if (!confirmed) return;
+
+  // Optimistically remove from screen
+  wallNotes = wallNotes.filter(n => n.id !== noteId);
+  renderFreedomWall();
+
+  if (isVercelApi && isVercelKVConnected) {
+    try {
+      const res = await fetch('/api/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'delete',
+          noteId: noteId,
+          adminPassword: adminPassword
+        })
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        alert('Could not delete note: ' + (data.message || 'Unauthorized'));
+        fetchLatestNotes();
+      }
+    } catch (e) {
+      console.error('Delete note failed:', e);
+    }
+  } else {
+    saveLocalNotes();
+  }
+};
+
+function updateAdminUI() {
+  const adminBtn = document.getElementById('admin-mode-toggle-btn');
+  if (adminBtn) {
+    if (isAdmin) {
+      adminBtn.innerHTML = `<span>👑</span> <span>Admin Mode Active</span>`;
+      adminBtn.classList.add('active');
+      adminBtn.title = 'Click to exit Admin Mode';
+    } else {
+      adminBtn.innerHTML = `<span>🔒</span> <span>Admin Login</span>`;
+      adminBtn.classList.remove('active');
+      adminBtn.title = 'Click to log in as Admin to manage and remove notes';
+    }
+  }
+}
+
+// 6. Photo Attachment & Compression Engine
 function setupPhotoAttachment() {
   const fileInput = document.getElementById('note-photo-input');
   const previewImg = document.getElementById('photo-preview-img');
@@ -341,7 +415,7 @@ function setupPhotoAttachment() {
   });
 }
 
-// 6. Note Creation Modal & Logic
+// 7. Note Creation Modal & Event Listeners
 function setupEventListeners() {
   const pinModal = document.getElementById('pin-note-modal');
   const openPinBtns = document.querySelectorAll('.open-pin-modal');
@@ -352,10 +426,15 @@ function setupEventListeners() {
   const openLetterBtns = document.querySelectorAll('.open-letter-modal');
   const closeLetterBtn = document.getElementById('close-letter-modal');
 
-  // KV Help Modal
   const kvModal = document.getElementById('kv-help-modal');
   const openKvBtn = document.getElementById('sync-status-indicator');
   const closeKvBtn = document.getElementById('close-kv-modal');
+
+  // Admin Modal
+  const adminModal = document.getElementById('admin-login-modal');
+  const adminToggleBtn = document.getElementById('admin-mode-toggle-btn');
+  const closeAdminBtn = document.getElementById('close-admin-modal');
+  const adminForm = document.getElementById('admin-login-form');
 
   const openModal = (m) => {
     if (m) {
@@ -385,7 +464,91 @@ function setupEventListeners() {
   }
   if (closeKvBtn) closeKvBtn.addEventListener('click', () => closeModal(kvModal));
 
-  [pinModal, letterModal, kvModal].forEach(modal => {
+  // Admin button toggle
+  if (adminToggleBtn) {
+    adminToggleBtn.addEventListener('click', () => {
+      if (isAdmin) {
+        // Logout
+        if (confirm('Exit Admin Mode? (Delete buttons will be hidden)')) {
+          isAdmin = false;
+          adminPassword = '';
+          sessionStorage.removeItem('sheryl_admin_auth');
+          sessionStorage.removeItem('sheryl_admin_pwd');
+          updateAdminUI();
+          renderFreedomWall();
+        }
+      } else {
+        openModal(adminModal);
+        setTimeout(() => {
+          const pwdInput = document.getElementById('admin-password-input');
+          if (pwdInput) pwdInput.focus();
+        }, 150);
+      }
+    });
+  }
+
+  if (closeAdminBtn) closeAdminBtn.addEventListener('click', () => closeModal(adminModal));
+
+  // Admin Form Submit
+  if (adminForm) {
+    adminForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const pwdInput = document.getElementById('admin-password-input');
+      const errorMsg = document.getElementById('admin-error-msg');
+      const inputVal = pwdInput.value.trim();
+
+      if (!inputVal) return;
+
+      try {
+        const res = await fetch('/api/notes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'verify_admin',
+            password: inputVal
+          })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          isAdmin = true;
+          adminPassword = inputVal;
+          sessionStorage.setItem('sheryl_admin_auth', 'true');
+          sessionStorage.setItem('sheryl_admin_pwd', inputVal);
+
+          if (errorMsg) errorMsg.style.display = 'none';
+          pwdInput.value = '';
+          closeModal(adminModal);
+          updateAdminUI();
+          renderFreedomWall();
+          alert('👑 Admin Mode Unlocked! You can now delete any note using the 🗑️ button.');
+        } else {
+          if (errorMsg) {
+            errorMsg.textContent = 'Incorrect admin password. Please try again.';
+            errorMsg.style.display = 'block';
+          }
+        }
+      } catch (err) {
+        // Local mode fallback verify
+        if (inputVal === 'sheryl2026') {
+          isAdmin = true;
+          adminPassword = inputVal;
+          sessionStorage.setItem('sheryl_admin_auth', 'true');
+          sessionStorage.setItem('sheryl_admin_pwd', inputVal);
+          closeModal(adminModal);
+          updateAdminUI();
+          renderFreedomWall();
+        } else {
+          if (errorMsg) {
+            errorMsg.textContent = 'Incorrect password.';
+            errorMsg.style.display = 'block';
+          }
+        }
+      }
+    });
+  }
+
+  [pinModal, letterModal, kvModal, adminModal].forEach(modal => {
     if (modal) {
       modal.addEventListener('click', (e) => {
         if (e.target === modal) closeModal(modal);
@@ -395,7 +558,7 @@ function setupEventListeners() {
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      [pinModal, letterModal, kvModal].forEach(closeModal);
+      [pinModal, letterModal, kvModal, adminModal].forEach(closeModal);
     }
   });
 
@@ -482,7 +645,6 @@ function setupEventListeners() {
         renderFreedomWall();
 
         if (isVercelApi && !isVercelKVConnected) {
-          // Alert user to enable Vercel KV
           setTimeout(() => {
             openModal(kvModal);
           }, 800);
@@ -508,7 +670,7 @@ function setupEventListeners() {
   }
 }
 
-// 7. Falling Lavender & Lilac Petals
+// 8. Falling Lavender & Lilac Petals
 function setupFallingPetals() {
   const canvas = document.getElementById('petals-canvas');
   if (!canvas) return;

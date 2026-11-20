@@ -1,5 +1,5 @@
 // api/notes.js - Vercel Serverless Function for Sheryl's Freedom Wall
-// Supports Upstash Redis / Vercel KV REST API automatically!
+// Supports Upstash Redis / Vercel KV REST API + Admin Moderation Delete
 
 export default async function handler(req, res) {
   // CORS Headers
@@ -16,6 +16,9 @@ export default async function handler(req, res) {
   const KV_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
   const KV_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
   const STORAGE_KEY = 'sheryl_freedom_wall_notes_v1';
+  
+  // Default Admin Password (can be customized via Vercel Environment Variables: ADMIN_PASSWORD)
+  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'sheryl2026';
 
   // Read notes from Upstash / Vercel KV
   async function getStoredNotes() {
@@ -96,16 +99,8 @@ export default async function handler(req, res) {
     }
   }
 
-  // Handle POST - Add note or reaction
+  // Handle POST - Add note, react, or admin delete
   if (req.method === 'POST') {
-    if (!isConfigured) {
-      return res.status(200).json({
-        success: false,
-        isVercelKV: false,
-        message: 'Database not connected yet. Select Upstash in Vercel Storage to enable multi-device sync.'
-      });
-    }
-
     try {
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
 
@@ -113,9 +108,42 @@ export default async function handler(req, res) {
         return res.status(400).json({ success: false, message: 'Invalid request body' });
       }
 
+      // Check admin password verification request
+      if (body.action === 'verify_admin') {
+        if (body.password === ADMIN_PASSWORD) {
+          return res.status(200).json({ success: true, message: 'Admin verified' });
+        } else {
+          return res.status(401).json({ success: false, message: 'Incorrect password' });
+        }
+      }
+
+      if (!isConfigured) {
+        return res.status(200).json({
+          success: false,
+          isVercelKV: false,
+          message: 'Database not connected yet. Select Upstash in Vercel Storage to enable multi-device sync.'
+        });
+      }
+
       const notes = (await getStoredNotes()) || [];
 
-      // Action 1: Toggle Reaction
+      // Action 1: Admin Delete Note
+      if (body.action === 'delete' && body.noteId) {
+        if (body.adminPassword !== ADMIN_PASSWORD) {
+          return res.status(401).json({ success: false, message: 'Unauthorized: Invalid admin password' });
+        }
+
+        const filtered = notes.filter(n => n.id !== body.noteId);
+        await saveStoredNotes(filtered);
+
+        return res.status(200).json({
+          success: true,
+          message: 'Note successfully removed',
+          notes: filtered
+        });
+      }
+
+      // Action 2: Toggle Reaction
       if (body.action === 'react' && body.noteId) {
         const target = notes.find(n => n.id === body.noteId);
         if (target) {
@@ -126,7 +154,7 @@ export default async function handler(req, res) {
         return res.status(404).json({ success: false, message: 'Note not found' });
       }
 
-      // Action 2: Add New Note
+      // Action 3: Add New Note
       if (!body.text || !body.name) {
         return res.status(400).json({ success: false, message: 'Name and message required' });
       }
