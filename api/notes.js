@@ -1,5 +1,5 @@
 // api/notes.js - Vercel Serverless Function for Sheryl's Freedom Wall
-// Uses Vercel KV (Upstash Redis) native REST API
+// Supports Upstash Redis / Vercel KV REST API automatically!
 
 export default async function handler(req, res) {
   // CORS Headers
@@ -12,18 +12,18 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  const KV_URL = process.env.KV_REST_API_URL;
-  const KV_TOKEN = process.env.KV_REST_API_TOKEN;
+  // Upstash or Vercel KV environment variables (Vercel sets either of these)
+  const KV_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+  const KV_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
   const STORAGE_KEY = 'sheryl_freedom_wall_notes_v1';
 
-  // Read notes from Vercel KV
+  // Read notes from Upstash / Vercel KV
   async function getStoredNotes() {
     if (!KV_URL || !KV_TOKEN) {
       return null;
     }
 
     try {
-      // Upstash / Vercel KV standard REST command
       const response = await fetch(`${KV_URL}`, {
         method: 'POST',
         headers: {
@@ -39,13 +39,13 @@ export default async function handler(req, res) {
         if (Array.isArray(parsed)) return parsed;
       }
     } catch (err) {
-      console.error('Vercel KV read error:', err);
+      console.error('KV read error:', err);
     }
 
     return [];
   }
 
-  // Save notes to Vercel KV
+  // Save notes to Upstash / Vercel KV
   async function saveStoredNotes(notes) {
     if (!KV_URL || !KV_TOKEN) {
       return false;
@@ -64,7 +64,7 @@ export default async function handler(req, res) {
       const data = await response.json();
       return data && data.result === 'OK';
     } catch (err) {
-      console.error('Vercel KV write error:', err);
+      console.error('KV write error:', err);
       return false;
     }
   }
@@ -77,7 +77,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         success: true,
         isVercelKV: false,
-        message: 'Vercel KV not connected yet. Connect KV in Vercel Storage tab to enable multi-device sync.',
+        message: 'Database not connected yet. Select Upstash in Vercel Storage to enable multi-device sync.',
         count: 0,
         notes: []
       });
@@ -88,7 +88,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         success: true,
         isVercelKV: true,
-        count: notes.length,
+        count: notes ? notes.length : 0,
         notes: notes || []
       });
     } catch (error) {
@@ -102,7 +102,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         success: false,
         isVercelKV: false,
-        message: 'Vercel KV not connected yet. Connect KV in Vercel Storage tab to enable multi-device sync.'
+        message: 'Database not connected yet. Select Upstash in Vercel Storage to enable multi-device sync.'
       });
     }
 
