@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sheryl's Freedom Wall — Warm Memories &amp; Farewell Wishes</title>
+  <meta name="description" content="A live, real-time freedom wall for Sheryl. Pin your personal notes, memories, and farewell wishes for her next chapter!">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;1,400;1,600&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- Firebase Scripts (Compat mode for zero-build real-time sync on Vercel) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+  <!-- Freedom Wall Stylesheet (Purple Theme) -->
+  <link rel="stylesheet" href="css/freedom-wall.css">
+</head>
+<body>
+
+  <!-- Floating Falling Petals Canvas (Purple & Lilac) -->
+  <canvas id="petals-canvas"></canvas>
+
+  <!-- =========================================================================
+       TOP DOCK / FLOATING WALL CONTROLS
+       ========================================================================= -->
+  <header class="wall-top-bar">
+    <div class="top-bar-inner">
+      
+      <div class="wall-brand">
+        <span class="wall-brand-pin">💜</span>
+        <div class="wall-title-wrap">
+          <span class="wall-main-title">Sheryl's Freedom Wall</span>
+          <span class="wall-subtitle">A living wall of gratitude &amp; friendship</span>
+        </div>
+      </div>
+
+      <div class="wall-actions">
+        <button class="wall-btn btn-pin-note open-pin-modal" type="button">
+          <span>✏️</span>
+          <span>+ Stick a Note</span>
+        </button>
+
+        <button class="wall-btn btn-letter open-letter-modal" type="button">
+          <span>💌</span>
+          <span>Our Letter</span>
+        </button>
+
+        <button id="scatter-love-btn" class="wall-btn btn-scatter-love" type="button">
+          <span>💜</span>
+          <span>Scatter Love</span>
+        </button>
+
+        <button id="sync-status-indicator" class="wall-btn btn-sync-status" type="button" title="Check Multi-User Sync Status">
+          <span class="sync-dot offline"></span>
+          <span>Local Mode</span>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- =========================================================================
+       HERO BANNER
+       ========================================================================= -->
+  <section class="wall-hero-banner">
+    <div class="wall-tagline">
+      <span>💜</span>
+      <span>A Chapter of Appreciation</span>
+    </div>
+
+    <h1 class="wall-hero-title">
+      Thank You, <span>Sheryl.</span>
+    </h1>
+
+    <p class="wall-hero-desc">
+      This is our living Freedom Wall dedicated to you. Pin notes, memories, photos, and sweet blessings anytime — they appear right on the board in real time!
+    </p>
+
+    <div class="wall-hint-pill open-pin-modal">
+      <span>💡</span>
+      <span>Click “+ Stick a Note” or double-click anywhere on the board to post!</span>
+    </div>
+  </section>
+
+  <!-- =========================================================================
+       THE FREEDOM WALL BOARD (Collage & Sticky Notes)
+       ========================================================================= -->
+  <main id="freedom-wall-board" class="wall-container">
+    
+    <!-- 1. SHERYL'S SPOTLIGHT CENTERPIECE -->
+    <div class="sheryl-centerpiece-card">
+      <div class="pin-top-left">
+        <div class="pushpin pushpin-amethyst"></div>
+      </div>
+      <div class="pin-top-right">
+        <div class="pushpin pushpin-lilac"></div>
+      </div>
+
+      <div class="sheryl-photo-wrap">
+        <img src="images/sheryl.jpg" alt="Sheryl smiling warmly" loading="eager">
+      </div>
+
+      <div class="sheryl-centerpiece-content">
+        <div class="sheryl-scribble-tag">To our dearest Sheryl 💜</div>
+        <h2 class="sheryl-headline">Our Daily Sunshine &amp; Anchor</h2>
+        <p class="sheryl-tribute-text">
+          Thank you for the contagious laughter, the unwavering support, and the genuine warmth you brought to every single day. Wherever you go next, they are getting an absolute superstar!
+        </p>
+
+        <div class="sheryl-stickers-row">
+          <span class="sticker-badge">✨ Sunshine</span>
+          <span class="sticker-badge">☕ Best Coffee Buddy</span>
+          <span class="sticker-badge">💜 Teammate For Life</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. PINNED EDITORIAL LETTER TILE -->
+    <div class="wall-letter-tile open-letter-modal">
+      <div class="wax-seal-badge">S</div>
+      <div class="letter-preview-header">
+        <h3 class="letter-preview-title">An Open Letter to Sheryl</h3>
+      </div>
+      <p class="letter-preview-snippet">
+        “From the very first day you joined us, you gave our team something far deeper than just great work — you gave us heart. You noticed when someone needed a kind word, and you celebrated other people’s wins with genuine joy…”
+      </p>
+      <div class="letter-click-prompt">
+        ✉️ Tap to unfold &amp; read the full tribute letter
+      </div>
+    </div>
+
+    <!-- 3. REALTIME USER STICKY NOTES & PHOTO CARDS CONTAINER -->
+    <div class="wall-grid">
+      <div id="wall-notes-container" style="display: contents;">
+        <!-- Clean, real-time notes will be rendered here dynamically (No fake placeholders) -->
+      </div>
+    </div>
+
+    <!-- 4. CLOSING PLAQUE AT THE BOTTOM OF THE BOARD -->
+    <div class="wall-footer">
+      <div class="wall-sign-plaque">
+        <div class="pin-top-left">
+          <div class="pushpin pushpin-amethyst"></div>
+        </div>
+        <div class="pin-top-right">
+          <div class="pushpin pushpin-amethyst"></div>
+        </div>
+
+        <h3 class="wall-closing-quote">
+          “Once a part of our story, <br>
+          <span>always a part of it.”</span>
+        </h3>
+        
+        <p class="wall-closing-sub">
+          Wishing you all the best, Sheryl. You will be missed!
+        </p>
+
+        <button class="wall-btn btn-pin-note open-pin-modal" type="button" style="margin-top: 0.5rem;">
+          <span>✏️</span>
+          <span>Add Your Note to the Wall</span>
+        </button>
+      </div>
+
+      <div class="wall-footer-meta">
+        Handcrafted with love for Sheryl • Freedom Wall Keepsake 2026
+      </div>
+    </div>
+
+  </main>
+
+  <!-- =========================================================================
+       MODAL: PIN A NOTE (WITH OPTIONAL REAL PHOTO ATTACHMENT)
+       ========================================================================= -->
+  <div id="pin-note-modal" class="freedom-modal" role="dialog" aria-modal="true" aria-labelledby="pin-modal-title">
+    <div class="freedom-modal-card">
+      <button id="close-pin-modal" class="modal-close-x" type="button" aria-label="Close">✕</button>
+
+      <h3 id="pin-modal-title" class="form-title">Stick a Note for Sheryl</h3>
+      <p class="form-sub">Write a memory, thank-you, or attach a photo. It pins directly to Sheryl's wall in real time!</p>
+
+      <form id="pin-note-form">
+        
+        <!-- Note Color Picker -->
+        <div class="field-group">
+          <label class="field-label">Choose Note Color</label>
+          <div class="palette-picker">
+            <button type="button" class="color-option selected" data-color="lavender" style="background: #F1E5F8;" title="Soft Lavender"></button>
+            <button type="button" class="color-option" data-color="lilac" style="background: #F9EAF7;" title="Pastel Lilac"></button>
+            <button type="button" class="color-option" data-color="mauve" style="background: #EFE0F0;" title="Dusty Mauve"></button>
+            <button type="button" class="color-option" data-color="periwinkle" style="background: #ECE8F9;" title="Soft Periwinkle"></button>
+            <button type="button" class="color-option" data-color="cream" style="background: #FAF6FC;" title="Warm Orchid Cream"></button>
+            <button type="button" class="color-option" data-color="buttercup" style="background: #FFF9E0;" title="Buttercup Gold"></button>
+          </div>
+        </div>
+
+        <!-- Sticker Emoji Picker -->
+        <div class="field-group">
+          <label class="field-label">Choose a Sticker</label>
+          <div class="stickers-picker">
+            <button type="button" class="sticker-opt-btn selected" data-sticker="💜">💜</button>
+            <button type="button" class="sticker-opt-btn" data-sticker="🌸">🌸</button>
+            <button type="button" class="sticker-opt-btn" data-sticker="✨">✨</button>
+            <button type="button" class="sticker-opt-btn" data-sticker="☕">☕</button>
+            <button type="button" class="sticker-opt-btn" data-sticker="🎈">🎈</button>
+            <button type="button" class="sticker-opt-btn" data-sticker="🍀">🍀</button>
+            <button type="button" class="sticker-opt-btn" data-sticker="🧁">🧁</button>
+            <button type="button" class="sticker-opt-btn" data-sticker="💌">💌</button>
+          </div>
+        </div>
+
+        <!-- Fastener Type -->
+        <div class="field-group" style="display: flex; gap: 1.5rem; align-items: center; margin-bottom: 1.2rem;">
+          <span class="field-label" style="margin-bottom: 0;">Fasten With:</span>
+          <label style="font-size: 0.88rem; display: flex; align-items: center; gap: 0.35rem; cursor: pointer;">
+            <input type="radio" name="fastener-type" value="tape" checked> Washi Tape
+          </label>
+          <label style="font-size: 0.88rem; display: flex; align-items: center; gap: 0.35rem; cursor: pointer;">
+            <input type="radio" name="fastener-type" value="pin"> Pushpin
+          </label>
+        </div>
+
+        <!-- Optional Photo Attachment -->
+        <div class="field-group">
+          <label for="note-photo-input" class="field-label">Attach a Real Photo (Optional)</label>
+          <div class="photo-upload-box">
+            <input type="file" id="note-photo-input" accept="image/*" style="font-size: 0.82rem; width: 100%;">
+            <img id="photo-preview-img" class="photo-preview-thumb" alt="Preview">
+          </div>
+        </div>
+
+        <!-- Note Text Input -->
+        <div class="field-group">
+          <label for="note-message-input" class="field-label">Your Message for Sheryl</label>
+          <textarea id="note-message-input" class="textarea-input" placeholder="Sheryl, thank you so much for..." required></textarea>
+        </div>
+
+        <!-- Author Name and Role -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+          <div class="field-group" style="margin-bottom: 0;">
+            <label for="note-author-input" class="field-label">Your Name</label>
+            <input type="text" id="note-author-input" class="text-input" placeholder="e.g. Alex" required>
+          </div>
+          <div class="field-group" style="margin-bottom: 0;">
+            <label for="note-role-input" class="field-label">Team / Connection</label>
+            <input type="text" id="note-role-input" class="text-input" placeholder="e.g. Friend / Team">
+          </div>
+        </div>
+
+        <button type="submit" class="btn-submit-note">📌 Pin Note to Sheryl's Wall</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL: FULL LETTER TO SHERYL
+       ========================================================================= -->
+  <div id="letter-modal" class="freedom-modal" role="dialog" aria-modal="true">
+    <div class="freedom-modal-card letter-modal-card">
+      <button id="close-letter-modal" class="modal-close-x" type="button" aria-label="Close">✕</button>
+
+      <div class="wax-seal-badge">S</div>
+      
+      <h2 class="full-letter-title">Dear Sheryl,</h2>
+      <div class="full-letter-sub">A tribute from everyone whose workdays you made brighter.</div>
+
+      <div class="full-letter-body">
+        <p>
+          It is rare to cross paths with someone whose presence immediately puts people at ease, who brings quiet grace into busy workspaces, and whose smile has the power to turn around even the most demanding afternoons. From the very first day you joined us, you gave our team something far deeper than just great work — you gave us heart.
+        </p>
+
+        <p>
+          We will always remember how dependable you were when problems felt thorny, how patient you were with everyone around you, and how easily laughter came whenever you were nearby. You never just checked off tasks; you cared about the people behind them. You noticed when someone needed a kind word. You celebrated other people’s wins with genuine joy. That generosity of spirit is something that cannot be taught, and it made our entire team culture warmer and richer.
+        </p>
+
+        <div class="full-letter-quote">
+          “True colleagues are not measured merely by what they accomplish side-by-side, but by the warmth, laughter, and courage they leave behind in the hearts of others.”
+        </div>
+
+        <p>
+          As you turn the page to this next chapter, we feel that familiar bittersweet mix of feelings: sadness to see your daily presence go, but an overwhelming pride and excitement for everything that awaits you. You have an incredible gift for uplifting others, and whatever team, community, or endeavor you join next will quickly realize just how fortunate they are to have you.
+        </p>
+
+        <p>
+          Take your courage with you, trust your instincts, and never forget that you have an entire group of friends right here cheering you on at every step. Thank you for the memories, the shared laughs, the honest advice, and the kindness that made every day a little brighter.
+        </p>
+
+        <div class="full-letter-signoff">
+          <span style="font-size: 0.95rem; color: #7B6B84;">With all our admiration and warmest love,</span>
+          <span class="signoff-hand">Always in our corner,</span>
+          <span class="signoff-team">Your Colleagues, Teammates &amp; Friends</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL: LIVE SYNC SETUP (For Multi-User Realtime Notes on Vercel)
+       ========================================================================= -->
+  <div id="sync-setup-modal" class="freedom-modal" role="dialog" aria-modal="true">
+    <div class="freedom-modal-card">
+      <button id="close-sync-modal" class="modal-close-x" type="button" aria-label="Close">✕</button>
+
+      <h3 class="form-title">Realtime Wall Sync on Vercel</h3>
+      <p class="form-sub">
+        Connect a free Firebase Realtime Database in 2 minutes so anyone visiting your Vercel link can add notes live!
+      </p>
+
+      <div style="background: #F4ECF8; padding: 1.2rem; border-radius: 8px; font-size: 0.88rem; line-height: 1.6; margin-bottom: 1.5rem; border: 1px solid var(--purple-border);">
+        <strong>Quick 2-Minute Setup for Vercel:</strong>
+        <ol style="margin-left: 1.2rem; margin-top: 0.4rem;">
+          <li>Create a free project at <a href="https://console.firebase.google.com" target="_blank" style="color: var(--purple-primary); font-weight: 600;">console.firebase.google.com</a>.</li>
+          <li>Click <em>Realtime Database &rarr; Create Database &rarr; Start in Test Mode</em>.</li>
+          <li>In Project Settings (gear icon), add a Web App and paste the config below (or paste into <code>js/firebase-config.js</code>).</li>
+        </ol>
+      </div>
+
+      <div class="field-group">
+        <label for="firebase-config-json" class="field-label">Paste Firebase Config JSON Here</label>
+        <textarea id="firebase-config-json" class="textarea-input" style="font-family: monospace; font-size: 0.85rem;" placeholder='{
+  "apiKey": "AIzaSy...",
+  "authDomain": "my-project.firebaseapp.com",
+  "databaseURL": "https://my-project-default-rtdb.firebaseio.com",
+  "projectId": "my-project",
+  "storageBucket": "my-project.appspot.com",
+  "messagingSenderId": "123456",
+  "appId": "1:123456:web:abcd"
+}'></textarea>
+      </div>
+
+      <button id="save-firebase-config-btn" type="button" class="btn-submit-note" style="margin-bottom: 0.8rem;">
+        ⚡ Connect &amp; Enable Live Real-Time Wall
+      </button>
+
+      <p style="font-size: 0.78rem; color: #8C6E96; text-align: center;">
+        Note: When testing locally without Firebase, notes save in Local Mode.
+      </p>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/firebase-config.js"></script>
+  <script src="js/freedom-wall.js"></script>
+</body>
+</html>
