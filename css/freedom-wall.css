@@ -1,5 +1,5 @@
 /* ==========================================================================
-   SHERYL'S FREEDOM WALL — PURPLE THEME STYLESHEET (WITH ADMIN CONTROLS)
+   SHERYL'S FREEDOM WALL — PURPLE THEME STYLESHEET (WITH RESILIENT LAYOUT & ADMIN TOOLS)
    Aesthetic: Soft Lavender, Lilac Mist, Deep Plum, Dusty Mauve, 
    Tactile Cork/Linen Canvas, Washi Tape, Metallic Amethyst Pins
    ========================================================================== */
@@ -469,7 +469,7 @@ body {
 
 /* ==========================================================================
    PINNED ENVELOPE / TRIBUTE LETTER TILE
-   ========================================================================= */
+   ========================================================================== */
 .wall-letter-tile {
   grid-column: 1 / -1;
   background: #FDFCFF;
@@ -541,11 +541,11 @@ body {
 }
 
 /* ==========================================================================
-   STICKY NOTES (REALTIME FREEDOM WALL POSTS)
-   ========================================================================= */
+   STICKY NOTES (REALTIME FREEDOM WALL POSTS WITH CONTROLLED PROPORTIONS)
+   ========================================================================== */
 .wall-note {
   position: relative;
-  padding: 1.6rem 1.4rem 1.3rem 1.4rem;
+  padding: 1.6rem 1.4rem 1.2rem 1.4rem;
   border-radius: 4px;
   box-shadow: var(--shadow-note);
   transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
@@ -607,11 +607,18 @@ body {
   filter: drop-shadow(0 2px 3px rgba(66, 35, 87, 0.12));
 }
 
-/* Admin Delete Button on Note */
-.note-admin-delete {
+/* Admin Action Buttons Container */
+.note-admin-actions {
   position: absolute;
   top: 8px;
   left: 8px;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  z-index: 30;
+}
+
+.note-admin-delete {
   width: 28px;
   height: 28px;
   border-radius: 50%;
@@ -625,30 +632,69 @@ body {
   font-size: 0.85rem;
   box-shadow: 0 2px 6px rgba(0,0,0,0.25);
   transition: transform 0.2s ease, background 0.2s ease;
-  z-index: 30;
 }
 
 .note-admin-delete:hover {
   background: #C53030;
-  transform: scale(1.18);
+  transform: scale(1.15);
 }
 
-/* User-attached image on sticky note / polaroid */
+.note-admin-crop {
+  height: 28px;
+  padding: 0 0.55rem;
+  border-radius: 14px;
+  background: rgba(124, 77, 148, 0.95);
+  color: #FFFFFF;
+  border: 1px solid #FFFFFF;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.note-admin-crop:hover {
+  background: #673A7E;
+  transform: scale(1.08);
+}
+
+/* User-attached image on sticky note / polaroid with customizable aspect ratios */
 .note-attached-photo {
   width: 100%;
-  max-height: 200px;
   border-radius: 4px;
   overflow: hidden;
   margin-bottom: 0.85rem;
   background: #EFE7F5;
   box-shadow: inset 0 0 4px rgba(0,0,0,0.1);
+  cursor: pointer;
+  position: relative;
 }
+
+/* Aspect ratios */
+.note-attached-photo.aspect-square { aspect-ratio: 1 / 1; max-height: 240px; }
+.note-attached-photo.aspect-portrait { aspect-ratio: 3 / 4; max-height: 280px; }
+.note-attached-photo.aspect-auto { aspect-ratio: auto; max-height: 320px; }
 
 .note-attached-photo img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
   display: block;
+}
+
+/* Object Fit & Positioning classes */
+.note-attached-photo img.fit-cover { object-fit: cover; }
+.note-attached-photo img.fit-contain { object-fit: contain; background: #F1E5F5; }
+.note-attached-photo img.pos-top { object-position: center top; }
+.note-attached-photo img.pos-center { object-position: center center; }
+.note-attached-photo img.pos-bottom { object-position: center bottom; }
+
+/* Controlled Message Area: Line-Clamped to preserve board harmony! */
+.note-message-box {
+  cursor: pointer;
+  margin-bottom: 0.8rem;
 }
 
 .note-message {
@@ -656,8 +702,42 @@ body {
   font-size: 1.35rem;
   line-height: 1.45;
   color: var(--text-dark);
-  margin-bottom: 1.2rem;
   word-wrap: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-height: 165px;
+}
+
+.note-message.has-photo {
+  -webkit-line-clamp: 3;
+  max-height: 95px;
+}
+
+/* "Read more" pill for long notes */
+.read-more-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: var(--font-sans);
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--purple-primary);
+  background: rgba(255, 255, 255, 0.75);
+  padding: 0.22rem 0.6rem;
+  border-radius: 9999px;
+  cursor: pointer;
+  margin-top: 0.4rem;
+  border: 1px solid rgba(124, 77, 148, 0.25);
+  transition: all 0.2s ease;
+}
+
+.read-more-pill:hover {
+  background: #FFFFFF;
+  border-color: var(--purple-primary);
+  transform: translateY(-1px);
 }
 
 .note-footer {
@@ -830,7 +910,7 @@ body {
 }
 
 /* ==========================================================================
-   MODAL DIALOGS (Pin Note, Read Full Letter, Sync Setup, Admin Login)
+   MODAL DIALOGS (Pin Note, Read Full Letter, Note Reader Popup, Admin Crop)
    ========================================================================== */
 .freedom-modal {
   position: fixed;
@@ -891,10 +971,98 @@ body {
   align-items: center;
   justify-content: center;
   transition: background 0.2s ease;
+  z-index: 10;
 }
 
 .modal-close-x:hover {
   background: #E4D2ED;
+}
+
+/* Full Note Reader Pop-up Card */
+.note-reader-card {
+  max-width: 620px;
+  position: relative;
+  border-radius: var(--radius-lg);
+  padding: 2.8rem 2.2rem 2.2rem 2.2rem;
+}
+
+.note-reader-image-wrap {
+  width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+  background: #F1E5F5;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+.note-reader-image-wrap img {
+  width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  display: block;
+}
+
+.note-reader-full-text {
+  font-family: var(--font-handwriting);
+  font-size: 1.6rem;
+  line-height: 1.55;
+  color: var(--text-dark);
+  margin-bottom: 1.8rem;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* Admin Image Fit Modal Controls */
+.crop-preview-box {
+  width: 100%;
+  height: 240px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #EAE0F0;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--purple-border);
+}
+
+.crop-preview-box img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  transition: all 0.25s ease;
+}
+
+.crop-controls-group {
+  margin-bottom: 1.2rem;
+}
+
+.crop-segmented-control {
+  display: flex;
+  background: #F3EAF8;
+  border-radius: 8px;
+  padding: 0.25rem;
+  gap: 0.25rem;
+}
+
+.crop-control-btn {
+  flex: 1;
+  padding: 0.5rem;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-body);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.crop-control-btn.active, .crop-control-btn:hover {
+  background: #FFFFFF;
+  color: var(--purple-primary);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.08);
 }
 
 /* Note Creation Form Styling */

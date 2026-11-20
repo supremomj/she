@@ -1,5 +1,5 @@
 // api/notes.js - Vercel Serverless Function for Sheryl's Freedom Wall
-// Supports Upstash Redis / Vercel KV REST API + Admin Moderation Delete
+// Supports Upstash Redis / Vercel KV REST API + Admin Moderation Delete & Image Fit Adjustments
 
 export default async function handler(req, res) {
   // CORS Headers
@@ -99,7 +99,7 @@ export default async function handler(req, res) {
     }
   }
 
-  // Handle POST - Add note, react, or admin delete
+  // Handle POST - Add note, react, admin delete, or admin image crop
   if (req.method === 'POST') {
     try {
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
@@ -143,7 +143,29 @@ export default async function handler(req, res) {
         });
       }
 
-      // Action 2: Toggle Reaction
+      // Action 2: Admin Update Image Fit & Crop Options
+      if (body.action === 'update_image_style' && body.noteId) {
+        if (body.adminPassword !== ADMIN_PASSWORD) {
+          return res.status(401).json({ success: false, message: 'Unauthorized: Invalid admin password' });
+        }
+
+        const target = notes.find(n => n.id === body.noteId);
+        if (target) {
+          target.imageFit = body.imageFit || 'cover';
+          target.imagePosition = body.imagePosition || 'center';
+          target.imageAspect = body.imageAspect || 'square';
+          await saveStoredNotes(notes);
+
+          return res.status(200).json({
+            success: true,
+            message: 'Image fit updated successfully',
+            note: target
+          });
+        }
+        return res.status(404).json({ success: false, message: 'Note not found' });
+      }
+
+      // Action 3: Toggle Reaction
       if (body.action === 'react' && body.noteId) {
         const target = notes.find(n => n.id === body.noteId);
         if (target) {
@@ -154,7 +176,7 @@ export default async function handler(req, res) {
         return res.status(404).json({ success: false, message: 'Note not found' });
       }
 
-      // Action 3: Add New Note
+      // Action 4: Add New Note
       if (!body.text || !body.name) {
         return res.status(400).json({ success: false, message: 'Name and message required' });
       }
@@ -163,13 +185,16 @@ export default async function handler(req, res) {
         id: 'note_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
         name: String(body.name).substring(0, 80),
         role: String(body.role || 'Teammate & Friend').substring(0, 80),
-        text: String(body.text).substring(0, 1000),
+        text: String(body.text).substring(0, 2000),
         color: body.color || 'lavender',
         sticker: body.sticker || '💜',
         fastener: body.fastener || 'tape',
         pinColor: body.pinColor || 'amethyst',
         tapeColor: body.tapeColor || 'lavender',
         image: body.image || null,
+        imageFit: 'cover',
+        imagePosition: 'center',
+        imageAspect: 'square',
         reactions: 1,
         date: 'Just now',
         createdAt: Date.now()

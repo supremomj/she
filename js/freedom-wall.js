@@ -3,9 +3,9 @@
  * 
  * Features:
  * 1. 100% Vercel Native — Connects directly to Upstash / Vercel KV via `/api/notes`
- * 2. Real-time background sync (every 2.5s) across all phones & computers
- * 3. Protected Admin Mode: enter admin password to unlock delete buttons (🗑️) on every note
- * 4. Zero placeholders — purely real user notes & Sheryl's authentic photo
+ * 2. Controlled Note Dimensions: Long notes are gracefully clamped with a "Read full note 📖" pop-up viewer!
+ * 3. Protected Admin Mode: enter admin password to unlock delete (🗑️) AND image fit/crop (🖼️ Fit)
+ * 4. Admin Image Fit & Crop Studio: toggle Cover vs Contain, Top/Center/Bottom alignment, and Aspect Ratio
  * 5. Interactive note creator (purple pastels, stickers, fasteners, photo upload)
  * 6. Live ❤️ reactions synced across all devices
  * 7. Pinned Letter to Sheryl modal
@@ -22,6 +22,12 @@ let lastKnownNotesHash = '';
 // Admin State
 let isAdmin = sessionStorage.getItem('sheryl_admin_auth') === 'true';
 let adminPassword = sessionStorage.getItem('sheryl_admin_pwd') || '';
+let currentEditingImageNoteId = null;
+
+// Temporary state for the image crop editor
+let editImageFit = 'cover';
+let editImagePosition = 'center';
+let editImageAspect = 'square';
 
 // Selected note creator state
 let selectedColor = 'lavender';
@@ -36,6 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
   setupPhotoAttachment();
   setupFallingPetals();
+  setupImageEditorControls();
 });
 
 // 1. Initialize Vercel API / Storage
@@ -130,7 +137,7 @@ async function fetchLatestNotes() {
 }
 
 function generateHash(notes) {
-  return notes.map(n => `${n.id}:${n.reactions || 0}`).join('|');
+  return notes.map(n => `${n.id}:${n.reactions || 0}:${n.imageFit || ''}:${n.imagePosition || ''}:${n.imageAspect || ''}`).join('|');
 }
 
 // 2. Local Storage Fallback
@@ -207,34 +214,68 @@ function renderFreedomWall() {
       `;
     }
 
-    // Admin Delete Button (Only visible when Admin Mode is unlocked!)
-    let adminDeleteHtml = '';
+    // Admin Action Buttons (Delete + Crop/Fit)
+    let adminActionsHtml = '';
     if (isAdmin) {
-      adminDeleteHtml = `
-        <button class="note-admin-delete" onclick="adminDeleteNote('${note.id}', '${escapeJs(note.name)}')" title="Delete this note (Admin)">
-          🗑️
-        </button>
+      let cropBtnHtml = '';
+      if (note.image) {
+        cropBtnHtml = `
+          <button class="note-admin-crop" onclick="event.stopPropagation(); openAdminCropModal('${note.id}')" title="Adjust Picture Fit & Crop">
+            <span>🖼️</span> <span>Fit</span>
+          </button>
+        `;
+      }
+
+      adminActionsHtml = `
+        <div class="note-admin-actions">
+          <button class="note-admin-delete" onclick="event.stopPropagation(); adminDeleteNote('${note.id}', '${escapeJs(note.name)}')" title="Delete this note">
+            🗑️
+          </button>
+          ${cropBtnHtml}
+        </div>
       `;
     }
 
-    // User Attached Photo
+    // User Attached Photo with Customizable Aspect and Fit
     let photoHtml = '';
     if (note.image) {
+      const aspectClass = `aspect-${note.imageAspect || 'square'}`;
+      const fitClass = `fit-${note.imageFit || 'cover'}`;
+      const posClass = `pos-${note.imagePosition || 'center'}`;
+
       photoHtml = `
-        <div class="note-attached-photo">
-          <img src="${note.image}" alt="Attached memory" loading="lazy">
+        <div class="note-attached-photo ${aspectClass}" onclick="openNoteReaderModal('${note.id}')">
+          <img src="${note.image}" class="${fitClass} ${posClass}" alt="Attached memory" loading="lazy">
         </div>
+      `;
+    }
+
+    // Handle long note truncation and popup view trigger
+    const charLimit = note.image ? 100 : 160;
+    const isLongNote = note.text && note.text.length > charLimit;
+    const hasPhotoClass = note.image ? 'has-photo' : '';
+
+    let readMoreBtnHtml = '';
+    if (isLongNote) {
+      readMoreBtnHtml = `
+        <button class="read-more-pill" onclick="event.stopPropagation(); openNoteReaderModal('${note.id}')" type="button">
+          <span>Read full note</span> <span>📖</span>
+        </button>
       `;
     }
 
     const liked = isReactionActive(note.id);
 
     card.innerHTML = `
-      ${adminDeleteHtml}
+      ${adminActionsHtml}
       ${fastenerHtml}
       <div class="note-sticker">${escapeHtml(note.sticker || '💜')}</div>
       ${photoHtml}
-      <p class="note-message">${escapeHtml(note.text)}</p>
+      
+      <div class="note-message-box" onclick="openNoteReaderModal('${note.id}')" title="Click to read in full pop-up">
+        <p class="note-message ${hasPhotoClass}">${escapeHtml(note.text)}</p>
+        ${readMoreBtnHtml}
+      </div>
       
       <div class="note-footer">
         <div class="note-author-info">
@@ -243,7 +284,7 @@ function renderFreedomWall() {
           <span class="note-date">${escapeHtml(note.date || 'Recent')}</span>
         </div>
 
-        <button class="note-reactions ${liked ? 'reacted' : ''}" onclick="toggleNoteReaction('${note.id}')" aria-label="React to note">
+        <button class="note-reactions ${liked ? 'reacted' : ''}" onclick="event.stopPropagation(); toggleNoteReaction('${note.id}')" aria-label="React to note">
           <span>💜</span>
           <span class="reaction-count">${note.reactions || 0}</span>
         </button>
@@ -317,14 +358,180 @@ window.toggleNoteReaction = async function(noteId) {
   }
 };
 
-// 5. Admin Mode Controls & Delete Action
+// 5. Note Reader Pop-up Modal (Full View for Long Notes)
+window.openNoteReaderModal = function(noteId) {
+  const note = wallNotes.find(n => n.id === noteId);
+  if (!note) return;
+
+  const modal = document.getElementById('note-reader-modal');
+  const card = document.getElementById('note-reader-card');
+  const imageWrap = document.getElementById('note-reader-image-wrap');
+  const imgEl = document.getElementById('note-reader-img');
+  const textEl = document.getElementById('note-reader-text');
+  const authorEl = document.getElementById('note-reader-author');
+  const roleEl = document.getElementById('note-reader-role');
+  const dateEl = document.getElementById('note-reader-date');
+  const stickerEl = document.getElementById('note-reader-sticker');
+
+  if (!modal) return;
+
+  // Set card color
+  card.className = `freedom-modal-card note-reader-card note-${note.color || 'lavender'}`;
+
+  // Image
+  if (note.image) {
+    imgEl.src = note.image;
+    imageWrap.style.display = 'block';
+  } else {
+    imageWrap.style.display = 'none';
+  }
+
+  // Text & Meta
+  textEl.textContent = note.text;
+  authorEl.textContent = note.name;
+  roleEl.textContent = note.role || 'Teammate & Friend';
+  dateEl.textContent = note.date || 'Recent';
+  stickerEl.textContent = note.sticker || '💜';
+
+  modal.classList.add('active');
+  document.body.style.overflow = 'hidden';
+};
+
+// 6. Admin Image Crop / Fit Editor
+window.openAdminCropModal = function(noteId) {
+  if (!isAdmin) return;
+
+  const note = wallNotes.find(n => n.id === noteId);
+  if (!note || !note.image) return;
+
+  currentEditingImageNoteId = noteId;
+  editImageFit = note.imageFit || 'cover';
+  editImagePosition = note.imagePosition || 'center';
+  editImageAspect = note.imageAspect || 'square';
+
+  const modal = document.getElementById('admin-crop-modal');
+  const previewImg = document.getElementById('crop-preview-img');
+
+  if (!modal || !previewImg) return;
+
+  previewImg.src = note.image;
+  updateCropPreview();
+  updateCropButtonsUI();
+
+  modal.classList.add('active');
+  document.body.style.overflow = 'hidden';
+};
+
+function updateCropPreview() {
+  const previewBox = document.getElementById('crop-preview-box');
+  const previewImg = document.getElementById('crop-preview-img');
+  if (!previewBox || !previewImg) return;
+
+  previewImg.className = `fit-${editImageFit} pos-${editImagePosition}`;
+  
+  if (editImageAspect === 'square') {
+    previewBox.style.height = '240px';
+  } else if (editImageAspect === 'portrait') {
+    previewBox.style.height = '300px';
+  } else {
+    previewBox.style.height = 'auto';
+  }
+}
+
+function updateCropButtonsUI() {
+  document.querySelectorAll('[data-crop-fit]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.cropFit === editImageFit);
+  });
+  document.querySelectorAll('[data-crop-pos]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.cropPos === editImagePosition);
+  });
+  document.querySelectorAll('[data-crop-aspect]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.cropAspect === editImageAspect);
+  });
+}
+
+function setupImageEditorControls() {
+  // Fit buttons
+  document.querySelectorAll('[data-crop-fit]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      editImageFit = btn.dataset.cropFit;
+      updateCropPreview();
+      updateCropButtonsUI();
+    });
+  });
+
+  // Position buttons
+  document.querySelectorAll('[data-crop-pos]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      editImagePosition = btn.dataset.cropPos;
+      updateCropPreview();
+      updateCropButtonsUI();
+    });
+  });
+
+  // Aspect buttons
+  document.querySelectorAll('[data-crop-aspect]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      editImageAspect = btn.dataset.cropAspect;
+      updateCropPreview();
+      updateCropButtonsUI();
+    });
+  });
+
+  // Save changes button
+  const saveBtn = document.getElementById('save-crop-settings-btn');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async () => {
+      if (!currentEditingImageNoteId) return;
+
+      const note = wallNotes.find(n => n.id === currentEditingImageNoteId);
+      if (note) {
+        note.imageFit = editImageFit;
+        note.imagePosition = editImagePosition;
+        note.imageAspect = editImageAspect;
+        renderFreedomWall();
+      }
+
+      const modal = document.getElementById('admin-crop-modal');
+      if (modal) {
+        modal.classList.remove('active');
+        document.body.style.overflow = '';
+      }
+
+      if (isVercelApi && isVercelKVConnected) {
+        try {
+          await fetch('/api/notes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'update_image_style',
+              noteId: currentEditingImageNoteId,
+              imageFit: editImageFit,
+              imagePosition: editImagePosition,
+              imageAspect: editImageAspect,
+              adminPassword: adminPassword
+            })
+          });
+          fetchLatestNotes();
+        } catch (e) {
+          console.error('Failed to update image style:', e);
+        }
+      } else {
+        saveLocalNotes();
+      }
+
+      currentEditingImageNoteId = null;
+    });
+  }
+}
+
+// 7. Admin Delete Action
 window.adminDeleteNote = async function(noteId, authorName) {
   if (!isAdmin) return;
 
   const confirmed = confirm(`Are you sure you want to permanently remove this note from "${authorName}"?`);
   if (!confirmed) return;
 
-  // Optimistically remove from screen
   wallNotes = wallNotes.filter(n => n.id !== noteId);
   renderFreedomWall();
 
@@ -361,14 +568,14 @@ function updateAdminUI() {
       adminBtn.classList.add('active');
       adminBtn.title = 'Click to exit Admin Mode';
     } else {
-      adminBtn.innerHTML = `<span>🔒</span> <span>Admin Login</span>`;
+      adminBtn.innerHTML = `<span>🔒</span> <span>Admin</span>`;
       adminBtn.classList.remove('active');
       adminBtn.title = 'Click to log in as Admin to manage and remove notes';
     }
   }
 }
 
-// 6. Photo Attachment & Compression Engine
+// 8. Photo Attachment Engine for Note Composer
 function setupPhotoAttachment() {
   const fileInput = document.getElementById('note-photo-input');
   const previewImg = document.getElementById('photo-preview-img');
@@ -415,7 +622,7 @@ function setupPhotoAttachment() {
   });
 }
 
-// 7. Note Creation Modal & Event Listeners
+// 9. Modals & Event Listeners
 function setupEventListeners() {
   const pinModal = document.getElementById('pin-note-modal');
   const openPinBtns = document.querySelectorAll('.open-pin-modal');
@@ -429,6 +636,14 @@ function setupEventListeners() {
   const kvModal = document.getElementById('kv-help-modal');
   const openKvBtn = document.getElementById('sync-status-indicator');
   const closeKvBtn = document.getElementById('close-kv-modal');
+
+  // Reader Modal
+  const readerModal = document.getElementById('note-reader-modal');
+  const closeReaderBtn = document.getElementById('close-reader-modal');
+
+  // Crop Modal
+  const cropModal = document.getElementById('admin-crop-modal');
+  const closeCropBtn = document.getElementById('close-crop-modal');
 
   // Admin Modal
   const adminModal = document.getElementById('admin-login-modal');
@@ -455,6 +670,9 @@ function setupEventListeners() {
   openLetterBtns.forEach(btn => btn.addEventListener('click', () => openModal(letterModal)));
   if (closeLetterBtn) closeLetterBtn.addEventListener('click', () => closeModal(letterModal));
 
+  if (closeReaderBtn) closeReaderBtn.addEventListener('click', () => closeModal(readerModal));
+  if (closeCropBtn) closeCropBtn.addEventListener('click', () => closeModal(cropModal));
+
   if (openKvBtn) {
     openKvBtn.addEventListener('click', () => {
       if (!isVercelKVConnected) {
@@ -468,8 +686,7 @@ function setupEventListeners() {
   if (adminToggleBtn) {
     adminToggleBtn.addEventListener('click', () => {
       if (isAdmin) {
-        // Logout
-        if (confirm('Exit Admin Mode? (Delete buttons will be hidden)')) {
+        if (confirm('Exit Admin Mode? (Moderation buttons will be hidden)')) {
           isAdmin = false;
           adminPassword = '';
           sessionStorage.removeItem('sheryl_admin_auth');
@@ -521,7 +738,7 @@ function setupEventListeners() {
           closeModal(adminModal);
           updateAdminUI();
           renderFreedomWall();
-          alert('👑 Admin Mode Unlocked! You can now delete any note using the 🗑️ button.');
+          alert('👑 Admin Mode Unlocked! You can now delete notes (🗑️) and adjust photo fit (🖼️ Fit).');
         } else {
           if (errorMsg) {
             errorMsg.textContent = 'Incorrect admin password. Please try again.';
@@ -529,7 +746,6 @@ function setupEventListeners() {
           }
         }
       } catch (err) {
-        // Local mode fallback verify
         if (inputVal === 'sheryl2026') {
           isAdmin = true;
           adminPassword = inputVal;
@@ -548,7 +764,7 @@ function setupEventListeners() {
     });
   }
 
-  [pinModal, letterModal, kvModal, adminModal].forEach(modal => {
+  [pinModal, letterModal, kvModal, adminModal, readerModal, cropModal].forEach(modal => {
     if (modal) {
       modal.addEventListener('click', (e) => {
         if (e.target === modal) closeModal(modal);
@@ -558,7 +774,7 @@ function setupEventListeners() {
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      [pinModal, letterModal, kvModal, adminModal].forEach(closeModal);
+      [pinModal, letterModal, kvModal, adminModal, readerModal, cropModal].forEach(closeModal);
     }
   });
 
@@ -670,7 +886,7 @@ function setupEventListeners() {
   }
 }
 
-// 8. Falling Lavender & Lilac Petals
+// 10. Falling Lavender & Lilac Petals
 function setupFallingPetals() {
   const canvas = document.getElementById('petals-canvas');
   if (!canvas) return;
