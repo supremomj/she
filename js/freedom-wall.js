@@ -3,13 +3,14 @@
  * 
  * Features:
  * 1. 100% Vercel Native — Connects directly to Upstash / Vercel KV via `/api/notes`
- * 2. Controlled Note Dimensions: Long notes are gracefully clamped with a "Read full note 📖" pop-up viewer!
- * 3. Protected Admin Mode: enter admin password to unlock delete (🗑️) AND image fit/crop (🖼️ Fit)
- * 4. Admin Image Fit & Crop Studio: toggle Cover vs Contain, Top/Center/Bottom alignment, and Aspect Ratio
- * 5. Interactive note creator (purple pastels, stickers, fasteners, photo upload)
- * 6. Live ❤️ reactions synced across all devices
- * 7. Pinned Letter to Sheryl modal
- * 8. Falling lavender/lilac petals animation
+ * 2. Animated GIF Support: GIF files and URLs play their full animation on cards and in the pop-up reader!
+ * 3. Controlled Note Dimensions: Long notes are gracefully clamped with a "Read full note 📖" pop-up viewer!
+ * 4. Protected Admin Mode: enter admin password to unlock delete (🗑️) AND image fit/crop (🖼️ Fit)
+ * 5. Admin Image Fit & Crop Studio: toggle Cover vs Contain, Top/Center/Bottom alignment, and Aspect Ratio
+ * 6. Interactive note creator (purple pastels, stickers, fasteners, photo/GIF upload & URL)
+ * 7. Live ❤️ reactions synced across all devices
+ * 8. Pinned Letter to Sheryl modal
+ * 9. Falling lavender/lilac petals animation
  */
 
 // App State
@@ -171,7 +172,7 @@ function renderFreedomWall() {
           <div class="pushpin pushpin-amethyst"></div>
           <div class="empty-state-icon">✍️💜</div>
           <h3 class="empty-state-title">The Wall is Waiting for Your Words!</h3>
-          <p class="empty-state-sub">Be the first to pin a heartfelt note, a favorite memory, or a photo for Sheryl.</p>
+          <p class="empty-state-sub">Be the first to pin a heartfelt note, a favorite memory, GIF, or photo for Sheryl.</p>
           <button class="wall-btn btn-pin-note open-pin-modal" type="button" style="margin-top: 1rem;">
             <span>✏️</span> <span>+ Stick the First Note</span>
           </button>
@@ -236,7 +237,7 @@ function renderFreedomWall() {
       `;
     }
 
-    // User Attached Photo with Customizable Aspect and Fit
+    // User Attached Photo or Animated GIF
     let photoHtml = '';
     if (note.image) {
       const aspectClass = `aspect-${note.imageAspect || 'square'}`;
@@ -358,7 +359,7 @@ window.toggleNoteReaction = async function(noteId) {
   }
 };
 
-// 5. Note Reader Pop-up Modal (Full View for Long Notes)
+// 5. Note Reader Pop-up Modal (Full View for Long Notes and Animated GIFs)
 window.openNoteReaderModal = function(noteId) {
   const note = wallNotes.find(n => n.id === noteId);
   if (!note) return;
@@ -378,7 +379,7 @@ window.openNoteReaderModal = function(noteId) {
   // Set card color
   card.className = `freedom-modal-card note-reader-card note-${note.color || 'lavender'}`;
 
-  // Image
+  // Image or GIF
   if (note.image) {
     imgEl.src = note.image;
     imageWrap.style.display = 'block';
@@ -451,7 +452,6 @@ function updateCropButtonsUI() {
 }
 
 function setupImageEditorControls() {
-  // Fit buttons
   document.querySelectorAll('[data-crop-fit]').forEach(btn => {
     btn.addEventListener('click', () => {
       editImageFit = btn.dataset.cropFit;
@@ -460,7 +460,6 @@ function setupImageEditorControls() {
     });
   });
 
-  // Position buttons
   document.querySelectorAll('[data-crop-pos]').forEach(btn => {
     btn.addEventListener('click', () => {
       editImagePosition = btn.dataset.cropPos;
@@ -469,7 +468,6 @@ function setupImageEditorControls() {
     });
   });
 
-  // Aspect buttons
   document.querySelectorAll('[data-crop-aspect]').forEach(btn => {
     btn.addEventListener('click', () => {
       editImageAspect = btn.dataset.cropAspect;
@@ -478,7 +476,6 @@ function setupImageEditorControls() {
     });
   });
 
-  // Save changes button
   const saveBtn = document.getElementById('save-crop-settings-btn');
   if (saveBtn) {
     saveBtn.addEventListener('click', async () => {
@@ -575,51 +572,97 @@ function updateAdminUI() {
   }
 }
 
-// 8. Photo Attachment Engine for Note Composer
+// 8. Photo & Animated GIF Attachment Engine for Note Composer
 function setupPhotoAttachment() {
   const fileInput = document.getElementById('note-photo-input');
+  const gifUrlInput = document.getElementById('note-gif-url-input');
   const previewImg = document.getElementById('photo-preview-img');
 
-  if (!fileInput || !previewImg) return;
+  if (!previewImg) return;
 
-  fileInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) {
-      attachedImageBase64 = null;
-      previewImg.style.display = 'none';
-      return;
-    }
+  // Option A: Direct GIF / Image URL
+  if (gifUrlInput) {
+    gifUrlInput.addEventListener('input', () => {
+      const url = gifUrlInput.value.trim();
+      if (url) {
+        attachedImageBase64 = url;
+        previewImg.src = url;
+        previewImg.style.display = 'block';
+        if (fileInput) fileInput.value = '';
+      } else if (!fileInput || !fileInput.files.length) {
+        attachedImageBase64 = null;
+        previewImg.style.display = 'none';
+      }
+    });
+  }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const maxDim = 800;
-        let width = img.width;
-        let height = img.height;
+  // Option B: File Upload (Supports animated .gif files without freezing!)
+  if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) {
+        if (!gifUrlInput || !gifUrlInput.value.trim()) {
+          attachedImageBase64 = null;
+          previewImg.style.display = 'none';
+        }
+        return;
+      }
 
-        if (width > height && width > maxDim) {
-          height = Math.round((height * maxDim) / width);
-          width = maxDim;
-        } else if (height > maxDim) {
-          width = Math.round((width * maxDim) / height);
-          height = maxDim;
+      if (gifUrlInput) gifUrlInput.value = '';
+
+      // Check if it's an animated GIF
+      const isGif = file.type === 'image/gif' || file.name.toLowerCase().endsWith('.gif');
+
+      if (isGif) {
+        // For animated GIFs: preserve original binary data without canvas flattening so it animates!
+        if (file.size > 4.5 * 1024 * 1024) {
+          alert('GIF file is larger than 4.5MB. Please choose a smaller GIF or paste a GIF link!');
+          fileInput.value = '';
+          return;
         }
 
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          attachedImageBase64 = event.target.result;
+          previewImg.src = attachedImageBase64;
+          previewImg.style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+        return;
+      }
 
-        attachedImageBase64 = canvas.toDataURL('image/jpeg', 0.75);
-        previewImg.src = attachedImageBase64;
-        previewImg.style.display = 'block';
+      // For standard JPG/PNG: compress gracefully
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const maxDim = 800;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height && width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+
+          attachedImageBase64 = canvas.toDataURL('image/jpeg', 0.75);
+          previewImg.src = attachedImageBase64;
+          previewImg.style.display = 'block';
+        };
+        img.src = event.target.result;
       };
-      img.src = event.target.result;
-    };
-    reader.readAsDataURL(file);
-  });
+      reader.readAsDataURL(file);
+    });
+  }
 }
 
 // 9. Modals & Event Listeners
@@ -637,15 +680,12 @@ function setupEventListeners() {
   const openKvBtn = document.getElementById('sync-status-indicator');
   const closeKvBtn = document.getElementById('close-kv-modal');
 
-  // Reader Modal
   const readerModal = document.getElementById('note-reader-modal');
   const closeReaderBtn = document.getElementById('close-reader-modal');
 
-  // Crop Modal
   const cropModal = document.getElementById('admin-crop-modal');
   const closeCropBtn = document.getElementById('close-crop-modal');
 
-  // Admin Modal
   const adminModal = document.getElementById('admin-login-modal');
   const adminToggleBtn = document.getElementById('admin-mode-toggle-btn');
   const closeAdminBtn = document.getElementById('close-admin-modal');
@@ -834,7 +874,9 @@ function setupEventListeners() {
       pinForm.reset();
       attachedImageBase64 = null;
       const previewImg = document.getElementById('photo-preview-img');
+      const gifUrlInput = document.getElementById('note-gif-url-input');
       if (previewImg) previewImg.style.display = 'none';
+      if (gifUrlInput) gifUrlInput.value = '';
       closeModal(pinModal);
 
       if (window.spawnBlessings) window.spawnBlessings(40);
