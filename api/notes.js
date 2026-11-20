@@ -1,5 +1,5 @@
 // api/notes.js - Vercel Serverless Function for Sheryl's Freedom Wall
-// Supports Vercel KV directly + zero-setup fallback!
+// Uses Vercel KV (Upstash Redis) native REST API
 
 export default async function handler(req, res) {
   // CORS Headers
@@ -16,99 +16,104 @@ export default async function handler(req, res) {
   const KV_TOKEN = process.env.KV_REST_API_TOKEN;
   const STORAGE_KEY = 'sheryl_freedom_wall_notes_v1';
 
-  // Read notes from storage
+  // Read notes from Vercel KV
   async function getStoredNotes() {
-    // 1. Try Vercel KV if connected
-    if (KV_URL && KV_TOKEN) {
-      try {
-        const response = await fetch(`${KV_URL}/get/${STORAGE_KEY}`, {
-          headers: { Authorization: `Bearer ${KV_TOKEN}` }
-        });
-        const data = await response.json();
-        if (data && data.result) {
-          const parsed = typeof data.result === 'string' ? JSON.parse(data.result) : data.result;
-          if (Array.isArray(parsed)) return parsed;
-        }
-      } catch (err) {
-        console.error('Vercel KV read error:', err);
-      }
+    if (!KV_URL || !KV_TOKEN) {
+      return null;
     }
 
-    // 2. Zero-config fallback (allows instant testing on Vercel before linking Vercel KV)
     try {
-      const fbRes = await fetch(`https://kvdb.io/4yKqP9x8w7mN2bZ5vL1cR6/${STORAGE_KEY}`);
-      if (fbRes.ok) {
-        const data = await fbRes.json();
-        if (Array.isArray(data)) return data;
+      // Upstash / Vercel KV standard REST command
+      const response = await fetch(`${KV_URL}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${KV_TOKEN}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(['GET', STORAGE_KEY])
+      });
+
+      const data = await response.json();
+      if (data && data.result) {
+        const parsed = typeof data.result === 'string' ? JSON.parse(data.result) : data.result;
+        if (Array.isArray(parsed)) return parsed;
       }
-    } catch (e) {
-      // Fallback network error
+    } catch (err) {
+      console.error('Vercel KV read error:', err);
     }
 
     return [];
   }
 
-  // Save notes to storage
+  // Save notes to Vercel KV
   async function saveStoredNotes(notes) {
-    let saved = false;
-
-    // 1. Save to Vercel KV if connected
-    if (KV_URL && KV_TOKEN) {
-      try {
-        await fetch(`${KV_URL}/set/${STORAGE_KEY}`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${KV_TOKEN}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(JSON.stringify(notes))
-        });
-        saved = true;
-      } catch (err) {
-        console.error('Vercel KV write error:', err);
-      }
+    if (!KV_URL || !KV_TOKEN) {
+      return false;
     }
 
-    // 2. Save to zero-config fallback
     try {
-      await fetch(`https://kvdb.io/4yKqP9x8w7mN2bZ5vL1cR6/${STORAGE_KEY}`, {
+      const response = await fetch(`${KV_URL}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(notes)
+        headers: {
+          Authorization: `Bearer ${KV_TOKEN}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(['SET', STORAGE_KEY, JSON.stringify(notes)])
       });
-      saved = true;
-    } catch (e) {
-      // Fallback network error
-    }
 
-    return saved;
+      const data = await response.json();
+      return data && data.result === 'OK';
+    } catch (err) {
+      console.error('Vercel KV write error:', err);
+      return false;
+    }
   }
 
-  // Handle GET - Return all notes
+  const isConfigured = Boolean(KV_URL && KV_TOKEN);
+
+  // Handle GET - Return notes
   if (req.method === 'GET') {
+    if (!isConfigured) {
+      return res.status(200).json({
+        success: true,
+        isVercelKV: false,
+        message: 'Vercel KV not connected yet. Connect KV in Vercel Storage tab to enable multi-device sync.',
+        count: 0,
+        notes: []
+      });
+    }
+
     try {
       const notes = await getStoredNotes();
       return res.status(200).json({
         success: true,
-        isVercelKV: Boolean(KV_URL && KV_TOKEN),
+        isVercelKV: true,
         count: notes.length,
-        notes: notes
+        notes: notes || []
       });
     } catch (error) {
       return res.status(500).json({ success: false, error: error.message });
     }
   }
 
-  // Handle POST - Add note OR react to a note
+  // Handle POST - Add note or reaction
   if (req.method === 'POST') {
+    if (!isConfigured) {
+      return res.status(200).json({
+        success: false,
+        isVercelKV: false,
+        message: 'Vercel KV not connected yet. Connect KV in Vercel Storage tab to enable multi-device sync.'
+      });
+    }
+
     try {
       const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
 
       if (!body) {
-        return res.status(400).json({ success: false, message: 'Invalid body' });
+        return res.status(400).json({ success: false, message: 'Invalid request body' });
       }
 
-      const notes = await getStoredNotes();
+      const notes = (await getStoredNotes()) || [];
 
       // Action 1: Toggle Reaction
       if (body.action === 'react' && body.noteId) {
@@ -123,7 +128,7 @@ export default async function handler(req, res) {
 
       // Action 2: Add New Note
       if (!body.text || !body.name) {
-        return res.status(400).json({ success: false, message: 'Name and text required' });
+        return res.status(400).json({ success: false, message: 'Name and message required' });
       }
 
       const newNote = {
@@ -142,14 +147,12 @@ export default async function handler(req, res) {
         createdAt: Date.now()
       };
 
-      // Add to front (newest first)
       notes.unshift(newNote);
-
       await saveStoredNotes(notes);
 
       return res.status(201).json({
         success: true,
-        isVercelKV: Boolean(KV_URL && KV_TOKEN),
+        isVercelKV: true,
         note: newNote
       });
     } catch (error) {

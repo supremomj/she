@@ -1,10 +1,10 @@
 /**
- * SHERYL'S FREEDOM WALL — VERCEL NATIVE EDITION
+ * SHERYL'S FREEDOM WALL — VERCEL KV EDITION
  * 
  * Features:
- * 1. 100% Vercel Native — Zero Firebase, zero external accounts!
- * 2. Connects to `/api/notes` with fast real-time polling (2.5s)
- * 3. Fallback to LocalStorage when opened locally via file://
+ * 1. 100% Vercel Native — Connects directly to Vercel KV via `/api/notes`
+ * 2. Real-time background sync (every 2.5s) across all phones & computers
+ * 3. Clear indicator showing whether Vercel KV is connected
  * 4. Zero placeholders — purely real user notes & Sheryl's authentic photo
  * 5. Interactive note creator (purple pastels, stickers, fasteners, photo upload)
  * 6. Live ❤️ reactions synced across all devices
@@ -15,6 +15,7 @@
 // App State
 let wallNotes = [];
 let isVercelApi = false;
+let isVercelKVConnected = false;
 let pollingInterval = null;
 let lastKnownNotesHash = '';
 
@@ -37,35 +38,43 @@ async function initVercelStorage() {
   const statusBtn = document.getElementById('sync-status-indicator');
 
   try {
-    // Probe /api/notes
     const res = await fetch('/api/notes', { cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
+      isVercelApi = true;
+      isVercelKVConnected = Boolean(data.isVercelKV);
+
       if (data && Array.isArray(data.notes)) {
-        isVercelApi = true;
         wallNotes = data.notes;
         lastKnownNotesHash = generateHash(wallNotes);
         renderFreedomWall();
-
-        if (statusBtn) {
-          statusBtn.innerHTML = `<span class="sync-dot"></span> <span>Live on Vercel</span>`;
-          statusBtn.title = 'Real-time syncing enabled natively via Vercel!';
-        }
-
-        // Start background polling for real-time updates every 2.5s
-        startRealtimePolling();
-        return;
       }
+
+      if (statusBtn) {
+        if (isVercelKVConnected) {
+          statusBtn.innerHTML = `<span class="sync-dot"></span> <span>Live Synced</span>`;
+          statusBtn.title = 'Vercel KV is connected! Real-time syncing is active across all devices.';
+        } else {
+          statusBtn.innerHTML = `<span class="sync-dot offline"></span> <span>Connect Vercel KV</span>`;
+          statusBtn.title = 'Click here to connect free Vercel KV so your phone & computer can sync notes!';
+        }
+      }
+
+      if (isVercelKVConnected) {
+        startRealtimePolling();
+      }
+      return;
     }
   } catch (err) {
-    // If running offline or via file:// protocol
+    // Offline or file:// mode
   }
 
   // Local fallback
   isVercelApi = false;
+  isVercelKVConnected = false;
   if (statusBtn) {
     statusBtn.innerHTML = `<span class="sync-dot offline"></span> <span>Local Mode</span>`;
-    statusBtn.title = 'Running locally. Deploy to Vercel for instant multi-user sync!';
+    statusBtn.title = 'Running locally. Deploy to Vercel to sync across devices!';
   }
 
   loadLocalNotes();
@@ -76,7 +85,6 @@ function startRealtimePolling() {
   if (pollingInterval) clearInterval(pollingInterval);
 
   pollingInterval = setInterval(async () => {
-    // Only poll when the user's tab is visible
     if (document.hidden) return;
 
     try {
@@ -92,14 +100,11 @@ function startRealtimePolling() {
           }
         }
       }
-    } catch (e) {
-      // Quietly ignore transient network glitches
-    }
+    } catch (e) {}
   }, 2500);
 
-  // Immediate poll when user switches back to this browser tab
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && isVercelApi) {
+    if (!document.hidden && isVercelApi && isVercelKVConnected) {
       fetchLatestNotes();
     }
   });
@@ -147,7 +152,6 @@ function renderFreedomWall() {
 
   container.innerHTML = '';
 
-  // If 0 notes exist yet, display the inviting empty state
   if (wallNotes.length === 0) {
     container.innerHTML = `
       <div class="wall-empty-state">
@@ -175,7 +179,6 @@ function renderFreedomWall() {
     return;
   }
 
-  // Organic rotations
   const rotations = [-2.2, 1.8, -1.2, 2.4, -1.9, 1.4, -2.5, 2.1];
 
   wallNotes.forEach((note, index) => {
@@ -185,7 +188,6 @@ function renderFreedomWall() {
     card.style.transform = `rotate(${rot}deg)`;
     card.id = `note-${note.id}`;
 
-    // Fastener HTML
     let fastenerHtml = '';
     if (note.fastener === 'pin') {
       fastenerHtml = `
@@ -199,7 +201,6 @@ function renderFreedomWall() {
       `;
     }
 
-    // User Attached Photo
     let photoHtml = '';
     if (note.image) {
       photoHtml = `
@@ -264,7 +265,6 @@ window.toggleNoteReaction = async function(noteId) {
     let reactedList = JSON.parse(localStorage.getItem('sheryl_reacted_notes_purple') || '[]');
     const isReacted = reactedList.includes(noteId);
 
-    // Optimistically update UI
     const note = wallNotes.find(n => n.id === noteId);
     if (note) {
       note.reactions = isReacted ? Math.max(0, (note.reactions || 1) - 1) : (note.reactions || 0) + 1;
@@ -279,8 +279,7 @@ window.toggleNoteReaction = async function(noteId) {
     }
     localStorage.setItem('sheryl_reacted_notes_purple', JSON.stringify(reactedList));
 
-    // Send to Vercel API
-    if (isVercelApi) {
+    if (isVercelApi && isVercelKVConnected) {
       await fetch('/api/notes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -314,7 +313,6 @@ function setupPhotoAttachment() {
     reader.onload = (event) => {
       const img = new Image();
       img.onload = () => {
-        // Compress image to max 800px width/height and JPEG 0.75 quality for snappy sync
         const canvas = document.createElement('canvas');
         const maxDim = 800;
         let width = img.width;
@@ -354,6 +352,11 @@ function setupEventListeners() {
   const openLetterBtns = document.querySelectorAll('.open-letter-modal');
   const closeLetterBtn = document.getElementById('close-letter-modal');
 
+  // KV Help Modal
+  const kvModal = document.getElementById('kv-help-modal');
+  const openKvBtn = document.getElementById('sync-status-indicator');
+  const closeKvBtn = document.getElementById('close-kv-modal');
+
   const openModal = (m) => {
     if (m) {
       m.classList.add('active');
@@ -373,7 +376,16 @@ function setupEventListeners() {
   openLetterBtns.forEach(btn => btn.addEventListener('click', () => openModal(letterModal)));
   if (closeLetterBtn) closeLetterBtn.addEventListener('click', () => closeModal(letterModal));
 
-  [pinModal, letterModal].forEach(modal => {
+  if (openKvBtn) {
+    openKvBtn.addEventListener('click', () => {
+      if (!isVercelKVConnected) {
+        openModal(kvModal);
+      }
+    });
+  }
+  if (closeKvBtn) closeKvBtn.addEventListener('click', () => closeModal(kvModal));
+
+  [pinModal, letterModal, kvModal].forEach(modal => {
     if (modal) {
       modal.addEventListener('click', (e) => {
         if (e.target === modal) closeModal(modal);
@@ -383,7 +395,7 @@ function setupEventListeners() {
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      [pinModal, letterModal].forEach(closeModal);
+      [pinModal, letterModal, kvModal].forEach(closeModal);
     }
   });
 
@@ -440,7 +452,6 @@ function setupEventListeners() {
         newNote.image = attachedImageBase64;
       }
 
-      // Close modal immediately and celebrate
       pinForm.reset();
       attachedImageBase64 = null;
       const previewImg = document.getElementById('photo-preview-img');
@@ -449,8 +460,7 @@ function setupEventListeners() {
 
       if (window.spawnBlessings) window.spawnBlessings(40);
 
-      if (isVercelApi) {
-        // Post directly to Vercel Serverless Function
+      if (isVercelApi && isVercelKVConnected) {
         try {
           const res = await fetch('/api/notes', {
             method: 'POST',
@@ -470,6 +480,13 @@ function setupEventListeners() {
         wallNotes.unshift(newNote);
         saveLocalNotes();
         renderFreedomWall();
+
+        if (isVercelApi && !isVercelKVConnected) {
+          // Alert user to enable Vercel KV
+          setTimeout(() => {
+            openModal(kvModal);
+          }, 800);
+        }
       }
 
       setTimeout(() => {
@@ -481,7 +498,6 @@ function setupEventListeners() {
     });
   }
 
-  // Double click anywhere on empty board to pin note
   const board = document.getElementById('freedom-wall-board');
   if (board) {
     board.addEventListener('dblclick', (e) => {
