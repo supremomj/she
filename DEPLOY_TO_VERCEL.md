@@ -1,44 +1,28 @@
-# How to Deploy Sheryl's Freedom Wall to Vercel 🚀💜
+# How to Deploy Sheryl's Freedom Wall on Vercel (100% Vercel Native) 🚀💜
 
-This website is **100% ready for Vercel** with real-time multi-user syncing! When deployed, anyone with your Vercel link can stick notes, upload real photos, and react live from any device.
+This freedom wall is **100% Vercel Native** — **NO Firebase, NO Google Cloud, and NO external accounts required!**
 
----
-
-## ⚡ Option 1: Deploy with Vercel Web Dashboard (Easiest)
-
-1. **Upload / Push to GitHub**:
-   - Push this `sheryl-farewell` folder to a GitHub repository (e.g. `sheryl-farewell`).
-2. **Go to Vercel**:
-   - Visit [vercel.com](https://vercel.com) and log in.
-   - Click **"Add New..."** &rarr; **"Project"**.
-   - Select your `sheryl-farewell` repository and click **Deploy**.
-3. **Done!** Vercel will give you a live production URL (e.g. `https://sheryl-farewell.vercel.app`).
+It uses a Vercel Serverless Function (`api/notes.js`) with fast automatic polling to sync notes and real photo uploads across all visitors in real time.
 
 ---
 
-## 💻 Option 2: Deploy directly via Vercel CLI (10 Seconds)
+## ⚡ Instant Deploy to Vercel (3 Clicks)
 
-If you have Node.js and the Vercel CLI installed:
-```bash
-cd c:\Users\PMR\Downloads\sheryl-farewell
-vercel
-```
-Follow the prompt (press Enter for defaults), and your site will be live immediately!
+1. Go to **[vercel.com/new](https://vercel.com/new)** (log in with your GitHub account).
+2. Under **Import Git Repository**, select your repository **`she`** and click **Import**.
+3. Leave all settings at default and click **Deploy**.
+
+Vercel will build and deploy the project in ~15 seconds and give you a live production URL (e.g. `https://she.vercel.app`)!
 
 ---
 
-## 🔴 Enabling Real-Time Multi-User Sync (Free Firebase Setup)
+## 🔒 Enabling Permanent Vercel KV Storage (Optional, Recommended)
 
-Because Vercel is a static web host, multi-user real-time sync uses a **free Firebase Realtime Database**. This allows teammate notes to appear on everyone's screens instantly without page refreshes.
+The site works out of the box immediately. If you want permanent, private storage hosted directly on Vercel:
 
-### 2-Minute Free Firebase Setup:
-1. Go to [console.firebase.google.com](https://console.firebase.google.com) (free with any Google account).
-2. Click **Create a project** &rarr; Name it `sheryl-freedom-wall`.
-3. In the left menu, click **Build** &rarr; **Realtime Database** &rarr; **Create Database**.
-4. Choose **Start in test mode** (this allows anyone with the link to post notes).
-5. In Project Settings (gear icon), click the Web icon (`</>`) to get your Firebase configuration.
-6. Either:
-   - Paste the config values into `js/firebase-config.js`, **OR**
-   - Click the **"Local Mode"** pill in the website header and paste your Firebase JSON directly in the browser!
+1. In your Vercel Dashboard, open your project **`she`**.
+2. Click the **Storage** tab at the top.
+3. Click **Create Database** &rarr; select **KV**.
+4. Click **Connect to Project** &rarr; select `she`.
 
-Once configured, the indicator shows **🟢 Live Realtime Synced**, and all teammates can pin notes, upload photos, and react live together!
+Vercel will automatically connect Vercel KV to your serverless API. That's it! Everything stays 100% on Vercel.

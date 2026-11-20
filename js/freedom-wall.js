@@ -1,21 +1,22 @@
 /**
- * SHERYL'S FREEDOM WALL — PURPLE EDITION (REALTIME & ZERO PLACEHOLDERS)
+ * SHERYL'S FREEDOM WALL — VERCEL NATIVE EDITION
  * 
- * Clean, production-ready code for Vercel deployment:
- * 1. Zero fake placeholders — purely real user notes & Sheryl's authentic photo
- * 2. Real-time multi-user synchronization via Firebase Realtime Database
- * 3. Graceful offline fallback to LocalStorage
- * 4. Interactive note creator (pick purple pastels, sticker, fastener, message & optional photo)
- * 5. Photo compression engine for attaching real memories without bloat
- * 6. Interactive live ❤️ reactions with atomic updates
+ * Features:
+ * 1. 100% Vercel Native — Zero Firebase, zero external accounts!
+ * 2. Connects to `/api/notes` with fast real-time polling (2.5s)
+ * 3. Fallback to LocalStorage when opened locally via file://
+ * 4. Zero placeholders — purely real user notes & Sheryl's authentic photo
+ * 5. Interactive note creator (purple pastels, stickers, fasteners, photo upload)
+ * 6. Live ❤️ reactions synced across all devices
  * 7. Pinned Letter to Sheryl modal
  * 8. Falling lavender/lilac petals animation
  */
 
 // App State
 let wallNotes = [];
-let firebaseDb = null;
-let isLiveSyncActive = false;
+let isVercelApi = false;
+let pollingInterval = null;
+let lastKnownNotesHash = '';
 
 // Selected note creator state
 let selectedColor = 'lavender';
@@ -25,96 +26,118 @@ let attachedImageBase64 = null;
 
 // DOM Ready
 document.addEventListener('DOMContentLoaded', () => {
-  initFirebase();
-  initWallData();
+  initVercelStorage();
   setupEventListeners();
   setupPhotoAttachment();
   setupFallingPetals();
 });
 
-// 1. Firebase Initialization (Enables live multi-user notes on Vercel!)
-function initFirebase() {
+// 1. Initialize Vercel API / Storage
+async function initVercelStorage() {
+  const statusBtn = document.getElementById('sync-status-indicator');
+
   try {
-    let config = null;
-
-    const storedConfig = localStorage.getItem('sheryl_freedom_firebase_config');
-    if (storedConfig) {
-      config = JSON.parse(storedConfig);
-    } else if (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey && window.FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY') {
-      config = window.FIREBASE_CONFIG;
-    }
-
-    if (config && typeof firebase !== 'undefined') {
-      if (!firebase.apps.length) {
-        firebase.initializeApp(config);
-      }
-      firebaseDb = firebase.database();
-      isLiveSyncActive = true;
-      updateSyncStatusUI(true);
-
-      // Listen for real-time changes
-      firebaseDb.ref('freedom_wall_notes').on('value', snapshot => {
-        const val = snapshot.val();
-        if (val) {
-          wallNotes = Object.keys(val).map(key => ({
-            ...val[key],
-            id: key
-          })).reverse(); // Newest notes first
-        } else {
-          wallNotes = [];
-        }
+    // Probe /api/notes
+    const res = await fetch('/api/notes', { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && Array.isArray(data.notes)) {
+        isVercelApi = true;
+        wallNotes = data.notes;
+        lastKnownNotesHash = generateHash(wallNotes);
         renderFreedomWall();
-      });
 
-      console.log('🟣 Freedom Wall: Real-time Firebase connected for Vercel!');
-      return;
+        if (statusBtn) {
+          statusBtn.innerHTML = `<span class="sync-dot"></span> <span>Live on Vercel</span>`;
+          statusBtn.title = 'Real-time syncing enabled natively via Vercel!';
+        }
+
+        // Start background polling for real-time updates every 2.5s
+        startRealtimePolling();
+        return;
+      }
     }
   } catch (err) {
-    console.warn('Firebase init warning:', err);
+    // If running offline or via file:// protocol
   }
 
-  isLiveSyncActive = false;
-  updateSyncStatusUI(false);
-}
-
-function updateSyncStatusUI(isLive) {
-  const statusBtn = document.getElementById('sync-status-indicator');
-  if (!statusBtn) return;
-
-  if (isLive) {
-    statusBtn.innerHTML = `<span class="sync-dot"></span> <span>Live Realtime Synced</span>`;
-    statusBtn.title = 'Every note posted here updates live for everyone visiting this site on Vercel!';
-  } else {
-    statusBtn.innerHTML = `<span class="sync-dot offline"></span> <span>Local Mode (Connect Live Sync)</span>`;
-    statusBtn.title = 'Saved locally. Click here to connect Firebase for multi-user live sync on Vercel!';
+  // Local fallback
+  isVercelApi = false;
+  if (statusBtn) {
+    statusBtn.innerHTML = `<span class="sync-dot offline"></span> <span>Local Mode</span>`;
+    statusBtn.title = 'Running locally. Deploy to Vercel for instant multi-user sync!';
   }
+
+  loadLocalNotes();
 }
 
-// 2. Load Local Data if not live
-function initWallData() {
-  if (isLiveSyncActive) return;
+// Background Real-Time Polling on Vercel
+function startRealtimePolling() {
+  if (pollingInterval) clearInterval(pollingInterval);
 
+  pollingInterval = setInterval(async () => {
+    // Only poll when the user's tab is visible
+    if (document.hidden) return;
+
+    try {
+      const res = await fetch('/api/notes', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.notes)) {
+          const newHash = generateHash(data.notes);
+          if (newHash !== lastKnownNotesHash) {
+            lastKnownNotesHash = newHash;
+            wallNotes = data.notes;
+            renderFreedomWall();
+          }
+        }
+      }
+    } catch (e) {
+      // Quietly ignore transient network glitches
+    }
+  }, 2500);
+
+  // Immediate poll when user switches back to this browser tab
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && isVercelApi) {
+      fetchLatestNotes();
+    }
+  });
+}
+
+async function fetchLatestNotes() {
+  try {
+    const res = await fetch('/api/notes', { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && Array.isArray(data.notes)) {
+        lastKnownNotesHash = generateHash(data.notes);
+        wallNotes = data.notes;
+        renderFreedomWall();
+      }
+    }
+  } catch (e) {}
+}
+
+function generateHash(notes) {
+  return notes.map(n => `${n.id}:${n.reactions || 0}`).join('|');
+}
+
+// 2. Local Storage Fallback
+function loadLocalNotes() {
   try {
     const saved = localStorage.getItem('sheryl_real_wall_notes');
-    if (saved) {
-      wallNotes = JSON.parse(saved);
-    } else {
-      wallNotes = []; // Clean start, zero placeholders!
-    }
+    wallNotes = saved ? JSON.parse(saved) : [];
   } catch (e) {
     wallNotes = [];
   }
-
   renderFreedomWall();
 }
 
 function saveLocalNotes() {
-  if (isLiveSyncActive) return;
   try {
     localStorage.setItem('sheryl_real_wall_notes', JSON.stringify(wallNotes));
-  } catch (e) {
-    console.warn('Storage save error:', e);
-  }
+  } catch (e) {}
 }
 
 // 3. Render the Freedom Wall
@@ -124,7 +147,7 @@ function renderFreedomWall() {
 
   container.innerHTML = '';
 
-  // If 0 notes exist yet, display an inviting empty state
+  // If 0 notes exist yet, display the inviting empty state
   if (wallNotes.length === 0) {
     container.innerHTML = `
       <div class="wall-empty-state">
@@ -140,7 +163,6 @@ function renderFreedomWall() {
       </div>
     `;
 
-    // Rebind click to the empty card
     container.querySelectorAll('.open-pin-modal').forEach(el => {
       el.addEventListener('click', () => {
         const modal = document.getElementById('pin-note-modal');
@@ -177,7 +199,7 @@ function renderFreedomWall() {
       `;
     }
 
-    // Attached photo (if any)
+    // User Attached Photo
     let photoHtml = '';
     if (note.image) {
       photoHtml = `
@@ -237,27 +259,16 @@ function isReactionActive(noteId) {
   }
 }
 
-window.toggleNoteReaction = function(noteId) {
+window.toggleNoteReaction = async function(noteId) {
   try {
     let reactedList = JSON.parse(localStorage.getItem('sheryl_reacted_notes_purple') || '[]');
     const isReacted = reactedList.includes(noteId);
 
-    if (isLiveSyncActive && firebaseDb) {
-      const noteRef = firebaseDb.ref('freedom_wall_notes/' + noteId + '/reactions');
-      noteRef.transaction(current => {
-        return isReacted ? Math.max(0, (current || 1) - 1) : (current || 0) + 1;
-      });
-    } else {
-      const note = wallNotes.find(n => n.id === noteId);
-      if (note) {
-        if (isReacted) {
-          note.reactions = Math.max(0, (note.reactions || 1) - 1);
-        } else {
-          note.reactions = (note.reactions || 0) + 1;
-        }
-        saveLocalNotes();
-        renderFreedomWall();
-      }
+    // Optimistically update UI
+    const note = wallNotes.find(n => n.id === noteId);
+    if (note) {
+      note.reactions = isReacted ? Math.max(0, (note.reactions || 1) - 1) : (note.reactions || 0) + 1;
+      renderFreedomWall();
     }
 
     if (isReacted) {
@@ -267,6 +278,18 @@ window.toggleNoteReaction = function(noteId) {
       if (window.spawnBlessings) window.spawnBlessings(14);
     }
     localStorage.setItem('sheryl_reacted_notes_purple', JSON.stringify(reactedList));
+
+    // Send to Vercel API
+    if (isVercelApi) {
+      await fetch('/api/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'react', noteId: noteId })
+      });
+      fetchLatestNotes();
+    } else {
+      saveLocalNotes();
+    }
   } catch (err) {
     console.warn('Reaction error:', err);
   }
@@ -291,7 +314,7 @@ function setupPhotoAttachment() {
     reader.onload = (event) => {
       const img = new Image();
       img.onload = () => {
-        // Compress image to max 800px width/height and JPEG 0.75 quality for snappy real-time syncing
+        // Compress image to max 800px width/height and JPEG 0.75 quality for snappy sync
         const canvas = document.createElement('canvas');
         const maxDim = 800;
         let width = img.width;
@@ -331,11 +354,6 @@ function setupEventListeners() {
   const openLetterBtns = document.querySelectorAll('.open-letter-modal');
   const closeLetterBtn = document.getElementById('close-letter-modal');
 
-  const syncModal = document.getElementById('sync-setup-modal');
-  const openSyncBtn = document.getElementById('sync-status-indicator');
-  const closeSyncBtn = document.getElementById('close-sync-modal');
-  const saveFirebaseBtn = document.getElementById('save-firebase-config-btn');
-
   const openModal = (m) => {
     if (m) {
       m.classList.add('active');
@@ -355,10 +373,7 @@ function setupEventListeners() {
   openLetterBtns.forEach(btn => btn.addEventListener('click', () => openModal(letterModal)));
   if (closeLetterBtn) closeLetterBtn.addEventListener('click', () => closeModal(letterModal));
 
-  if (openSyncBtn) openSyncBtn.addEventListener('click', () => openModal(syncModal));
-  if (closeSyncBtn) closeSyncBtn.addEventListener('click', () => closeModal(syncModal));
-
-  [pinModal, letterModal, syncModal].forEach(modal => {
+  [pinModal, letterModal].forEach(modal => {
     if (modal) {
       modal.addEventListener('click', (e) => {
         if (e.target === modal) closeModal(modal);
@@ -368,7 +383,7 @@ function setupEventListeners() {
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      [pinModal, letterModal, syncModal].forEach(closeModal);
+      [pinModal, letterModal].forEach(closeModal);
     }
   });
 
@@ -399,7 +414,7 @@ function setupEventListeners() {
 
   // Submit Note Form
   if (pinForm) {
-    pinForm.addEventListener('submit', (e) => {
+    pinForm.addEventListener('submit', async (e) => {
       e.preventDefault();
 
       const name = document.getElementById('note-author-input').value.trim();
@@ -418,25 +433,14 @@ function setupEventListeners() {
         pinColor: ['amethyst', 'lilac', 'gold', 'silver'][Math.floor(Math.random() * 4)],
         tapeColor: ['lavender', 'lilac', 'amethyst', 'gold'][Math.floor(Math.random() * 4)],
         date: 'Just now',
-        reactions: 1,
-        timestamp: Date.now()
+        reactions: 1
       };
 
       if (attachedImageBase64) {
         newNote.image = attachedImageBase64;
       }
 
-      if (isLiveSyncActive && firebaseDb) {
-        // Pushes to Firebase Realtime Database — instant across all Vercel visitors!
-        firebaseDb.ref('freedom_wall_notes').push(newNote);
-      } else {
-        newNote.id = 'note-' + Date.now();
-        wallNotes.unshift(newNote);
-        saveLocalNotes();
-        renderFreedomWall();
-      }
-
-      // Reset form, photo preview & close modal
+      // Close modal immediately and celebrate
       pinForm.reset();
       attachedImageBase64 = null;
       const previewImg = document.getElementById('photo-preview-img');
@@ -445,31 +449,35 @@ function setupEventListeners() {
 
       if (window.spawnBlessings) window.spawnBlessings(40);
 
+      if (isVercelApi) {
+        // Post directly to Vercel Serverless Function
+        try {
+          const res = await fetch('/api/notes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newNote)
+          });
+          const data = await res.json();
+          if (data && data.note) {
+            wallNotes.unshift(data.note);
+            renderFreedomWall();
+          }
+        } catch (err) {
+          console.error('Post note error:', err);
+        }
+      } else {
+        newNote.id = 'note_' + Date.now();
+        wallNotes.unshift(newNote);
+        saveLocalNotes();
+        renderFreedomWall();
+      }
+
       setTimeout(() => {
         const topNote = document.querySelector('.wall-note');
         if (topNote) {
           topNote.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
       }, 200);
-    });
-  }
-
-  // Save Firebase Config Form in Sync Modal
-  if (saveFirebaseBtn) {
-    saveFirebaseBtn.addEventListener('click', () => {
-      const configInput = document.getElementById('firebase-config-json');
-      if (!configInput) return;
-
-      try {
-        const raw = configInput.value.trim();
-        const parsed = JSON.parse(raw);
-        localStorage.setItem('sheryl_freedom_firebase_config', JSON.stringify(parsed));
-        alert('Firebase configuration saved! Reconnecting live wall for Vercel...');
-        closeModal(syncModal);
-        location.reload();
-      } catch (err) {
-        alert('Invalid JSON configuration. Please check the format and try again!');
-      }
     });
   }
 
@@ -502,12 +510,12 @@ function setupFallingPetals() {
   let isRunning = false;
 
   const purpleColors = [
-    'rgba(195, 155, 225, 0.8)', // soft wisteria
-    'rgba(215, 185, 240, 0.75)', // pastel lilac
-    'rgba(165, 120, 200, 0.7)',  // medium amethyst
-    'rgba(240, 225, 252, 0.85)', // light lavender
-    'rgba(145, 95, 180, 0.65)',  // royal purple petal
-    'rgba(255, 245, 255, 0.8)'   // white orchid tint
+    'rgba(195, 155, 225, 0.8)',
+    'rgba(215, 185, 240, 0.75)',
+    'rgba(165, 120, 200, 0.7)',
+    'rgba(240, 225, 252, 0.85)',
+    'rgba(145, 95, 180, 0.65)',
+    'rgba(255, 245, 255, 0.8)'
   ];
 
   class Petal {
